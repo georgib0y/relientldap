@@ -1,66 +1,101 @@
 package main
 
 import (
-	"bytes"
-	"io"
 	"log"
 	"net"
-
-	asn1 "gopkg.in/asn1-ber.v1"
 )
 
 func main() {
+	entryRepo := PopulatedEntryRepo()
+	schemaRepo := PopulatedSchemaRepo()
+
+	schemaService := NewSchemaService(schemaRepo)
+	entryService := NewEntryService(schemaService, entryRepo)
+
+	controller := NewController(entryService)
+
 	ln, err := net.Listen("tcp", ":8000")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	conn, err := ln.Accept()
+	tcpConn, err := ln.Accept()
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	conn := NewConn(tcpConn)
 	defer conn.Close()
 
 	for {
-		p, err := asn1.ReadPacket(conn)
+		m, err := conn.ReadMessage()
+		if err != nil {
+			log.Fatal(err)
+		}
+		res, err := HandleMessage(controller, m)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		log.Printf("print packet 1: %v", *p)
-		asn1.PrintPacket(p)
-
-		msg, err := decodeMessage(p)
-		if err != nil {
+		if err = conn.Send(res); err != nil {
 			log.Fatal(err)
 		}
-
-		bindReq, ok := msg.ProtocolOp.(*BindRequest)
-		if !ok {
-			log.Println("print packet 3")
-			asn1.PrintPacket(p)
-			log.Fatal("Msg not bind request")
-		}
-
-		bindRes := BindResponse{Result{
-			ResultCode:        ResultSuccess,
-			MatchedDN:         bindReq.name,
-			DiagnosticMessage: "Hello from go",
-		}}
-
-		resp := Message{
-			MessageId:  1,
-			ProtocolOp: &bindRes,
-		}
-
-		p = resp.encodeMessageAsPacket()
-		log.Println("print packet 3")
-		asn1.PrintPacket(p)
-
-		if _, err := io.Copy(conn, bytes.NewBuffer(p.Bytes())); err != nil {
-			log.Fatal(err)
-		}
-		log.Println("wrote packet")
 	}
+}
+
+func PopulatedEntryRepo() EntryRepo {
+	repo := NewMemEntryRepo()
+
+	entries := []Entry{
+		{
+			id: 2,
+			attrs: map[OID]map[string]bool{
+				"dc-oid": {
+					"georgiboy": true,
+				},
+			},
+		},
+
+		{
+			id: ROOT_ID,
+			children: map[ID]bool{
+				ID(2): true,
+			},
+			attrs: map[OID]map[string]bool{
+				"dc-oid": {
+					"dev": true,
+				},
+			},
+		},
+	}
+
+	for _, entry := range entries {
+		repo.Save(entry)
+	}
+
+	return repo
+}
+
+func PopulatedSchemaRepo() SchemaRepo {
+	repo := NewMemSchemaRepo()
+
+	repo.objClasses = map[OID]ObjectClass{
+		"person-oid": {
+			numericoid: "person-oid",
+			names:      map[string]bool{"person": true},
+			supOids:    map[OID]bool{"top": true},
+			mustAttrs:  map[OID]bool{"cn-oid": true},
+			mayAttrs:   map[OID]bool{"sn-oid": true},
+		},
+		"cn-oid": {
+			numericoid: "cn-oid",
+			names:      map[string]bool{"cn": true, "commonName": true},
+		},
+		"sn-oid": {
+			numericoid: "sn-oid",
+			names:      map[string]bool{"sn": true, "surname": true},
+		},
+	}
+
+	return repo
 }

@@ -9,43 +9,36 @@ import (
 )
 
 type Conn struct {
-	conn     net.Conn
-	messages chan Message
-	errors   chan error
+	conn net.Conn
 }
 
-func NewConn(conn net.Conn, messages chan Message, errors chan error) *Conn {
-	return &Conn{conn, messages, errors}
+func NewConn(conn net.Conn) *Conn {
+	return &Conn{conn}
 }
 
-func (c *Conn) ReadMessage() {
+func (c *Conn) ReadMessage() (Message, error) {
 	p, err := asn1.ReadPacket(c.conn)
 	if err != nil {
-		c.errors <- err
-		return
+		return Message{}, err
 	}
 
 	msg, err := decodeMessage(p)
 	if err != nil {
-		c.errors <- err
-		return
+		return Message{}, err
 	}
 
-	c.messages <- msg
+	return msg, err
 }
 
-func (c *Conn) SendMessage(m Message) {
-	p := m.encodeMessageAsPacket()
+func (c *Conn) Send(e PacketEncoder) error {
+	p := e.EncodePacket()
 	if _, err := io.Copy(c.conn, bytes.NewReader(p.Bytes())); err != nil {
-		c.errors <- err
+		return err
 	}
 
+	return nil
 }
 
-func (c *Conn) Messages() chan Message {
-	return c.messages
-}
-
-func (c *Conn) Errors() chan error {
-	return c.errors
+func (c *Conn) Close() error {
+	return c.conn.Close()
 }
