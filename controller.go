@@ -7,6 +7,7 @@ import (
 
 type Controller interface {
 	HandleBindRequest(msgId int64, br *BindRequest) (Message, error)
+	HandleSearchRequest(msgId int64, sr *SearchRequest) (Message, error)
 	HandleAddRequest(msgId int64, ar *AddRequest) (Message, error)
 }
 
@@ -16,6 +17,8 @@ func HandleMessage(c Controller, m Message) (Message, error) {
 		return c.HandleBindRequest(m.MessageId, protoOp)
 	case *AddRequest:
 		return c.HandleAddRequest(m.MessageId, protoOp)
+	case *SearchRequest:
+		return c.HandleSearchRequest(m.MessageId, protoOp)
 	}
 
 	return Message{}, fmt.Errorf("Unknown/unimplemented message type")
@@ -39,6 +42,21 @@ func (c *ControllerImpl) HandleBindRequest(msgId int64, br *BindRequest) (Messag
 	m := Message{
 		MessageId:  msgId,
 		ProtocolOp: &bindRes,
+	}
+
+	return m, nil
+}
+
+func (c *ControllerImpl) HandleSearchRequest(msgId int64, sr *SearchRequest) (Message, error) {
+	searchDoneRes := SearchResultDoneResponse{
+		ResultCode:        Success,
+		MatchedDN:         sr.baseObject,
+		DiagnosticMessage: "Seaching not implmented yet",
+	}
+
+	m := Message{
+		MessageId:  msgId,
+		ProtocolOp: &searchDoneRes,
 	}
 
 	return m, nil

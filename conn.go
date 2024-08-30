@@ -5,7 +5,7 @@ import (
 	"io"
 	"net"
 
-	asn1 "gopkg.in/asn1-ber.v1"
+	asn1 "github.com/go-asn1-ber/asn1-ber"
 )
 
 type Conn struct {

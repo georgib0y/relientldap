@@ -32,6 +32,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		if _, ok := m.(*UnbindRequest) {
+			log.Println("Unbind request recieved, closing connection")
+			return
+		}
+		
 		res, err := HandleMessage(controller, m)
 		if err != nil {
 			log.Fatal(err)
