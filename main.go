@@ -31,13 +31,14 @@ func main() {
 		m, err := conn.ReadMessage()
 		if err != nil {
 			log.Fatal(err)
+
 		}
 
-		if _, ok := m.(*UnbindRequest) {
+		if _, ok := m.ProtocolOp.(*UnbindRequest); ok {
 			log.Println("Unbind request recieved, closing connection")
 			return
 		}
-		
+
 		res, err := HandleMessage(controller, m)
 		if err != nil {
 			log.Fatal(err)
@@ -54,23 +55,28 @@ func PopulatedEntryRepo() EntryRepo {
 
 	entries := []Entry{
 		{
-			id: 2,
+			id:         2,
+			objClasses: map[OID]bool{},
 			attrs: map[OID]map[string]bool{
 				"dc-oid": {
 					"georgiboy": true,
 				},
 			},
+			parent:   ROOT_ID,
+			children: map[ID]bool{},
 		},
 
 		{
-			id: ROOT_ID,
-			children: map[ID]bool{
-				ID(2): true,
-			},
+			id:         ROOT_ID,
+			objClasses: map[OID]bool{},
 			attrs: map[OID]map[string]bool{
 				"dc-oid": {
 					"dev": true,
 				},
+			},
+			parent: ROOT_ID,
+			children: map[ID]bool{
+				ID(2): true,
 			},
 		},
 	}
@@ -90,8 +96,16 @@ func PopulatedSchemaRepo() SchemaRepo {
 			numericoid: "person-oid",
 			names:      map[string]bool{"person": true},
 			supOids:    map[OID]bool{"top": true},
+			kind:       Structural,
 			mustAttrs:  map[OID]bool{"cn-oid": true},
 			mayAttrs:   map[OID]bool{"sn-oid": true},
+		},
+	}
+
+	repo.attribues = map[OID]Attribute{
+		"dc-oid": {
+			numericoid: "dc-oid",
+			names:      map[string]bool{"dc": true},
 		},
 		"cn-oid": {
 			numericoid: "cn-oid",

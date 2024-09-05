@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 )
 
 type Controller interface {
@@ -33,6 +34,7 @@ func NewController(entryService EntryService) Controller {
 }
 
 func (c *ControllerImpl) HandleBindRequest(msgId int64, br *BindRequest) (Message, error) {
+	log.Printf("Bind Request name = %s\n", br.name)
 	bindRes := BindResponse{
 		ResultCode:        Success,
 		MatchedDN:         br.name,
