@@ -1,5 +1,5 @@
-module gbldap
+module github.com/georgib0y/gbldap
 
-go 1.22.4
+go 1.22.6
 
 require github.com/go-asn1-ber/asn1-ber v1.5.7
