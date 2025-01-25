@@ -2,6 +2,7 @@ package add
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/georgib0y/gbldap/internal/app/domain"
 )
@@ -58,57 +59,59 @@ func (a *AddRequest) splitAttrs(ar AddRequest) (map[string]bool, map[string]map[
 }
 
 func (a *AddRequestService) AddEntry(ar AddRequest) (domain.Entry, error) {
-	dn, err := a.n.NormaliseDN(ar.Entry)
-	if err != nil {
-		return domain.Entry{}, err
-	}
+	log.Panicln("unimplemented")
+	// dn, err := a.n.NormaliseDN(ar.Entry)
+	// if err != nil {
+	// 	return domain.Entry{}, err
+	// }
 
-	_, found, err := a.r.FindByDN(dn)
-	if err != nil {
-		return domain.Entry{}, err
-	}
+	// _, found, err := a.r.FindByDN(dn)
+	// if err != nil {
+	// 	return domain.Entry{}, err
+	// }
 
-	if found {
-		return domain.Entry{}, fmt.Errorf("entry already exists")
-	}
+	// if found {
+	// 	return domain.Entry{}, fmt.Errorf("entry already exists")
+	// }
 
-	parent, found, err := a.r.FindByDN(dn.ParentDN())
-	if err != nil {
-		return domain.Entry{}, err
-	}
+	// parent, found, err := a.r.FindByDN(dn.ParentDN())
+	// if err != nil {
+	// 	return domain.Entry{}, err
+	// }
 
-	if !found {
-		return domain.Entry{}, fmt.Errorf("could not find entry parent")
-	}
+	// if !found {
+	// 	return domain.Entry{}, fmt.Errorf("could not find entry parent")
+	// }
 
-	objClasses, err := a.normaliseObjClasses(ar)
-	if err != nil {
-		return domain.Entry{}, err
-	}
+	// objClasses, err := a.normaliseObjClasses(ar)
+	// if err != nil {
+	// 	return domain.Entry{}, err
+	// }
 
-	attrs, err := a.normaliseAttributes(ar)
-	if err != nil {
-		return domain.Entry{}, err
-	}
+	// attrs, err := a.normaliseAttributes(ar)
+	// if err != nil {
+	// 	return domain.Entry{}, err
+	// }
 
-	entry := domain.Entry{
-		Parent:     parent.Id,
-		Children:   map[domain.ID]bool{},
-		ObjClasses: objClasses,
-		Attrs:      attrs,
-	}
+	// entry := domain.Entry{
+	// 	Parent:     parent.Id,
+	// 	Children:   map[domain.ID]bool{},
+	// 	ObjClasses: objClasses,
+	// 	Attrs:      attrs,
+	// }
 
-	if err = a.v.ValidateEntry(entry); err != nil {
-		return domain.Entry{}, err
-	}
+	// if err = a.v.ValidateEntry(entry); err != nil {
+	// 	return domain.Entry{}, err
+	// }
 
-	entry, err = a.r.Save(entry)
-	if err != nil {
-		return domain.Entry{}, err
-	}
+	// entry, err = a.r.Save(entry)
+	// if err != nil {
+	// 	return domain.Entry{}, err
+	// }
 
-	parent.Children[entry.Id] = true
-	_, err = a.r.Save(parent)
+	// parent.Children[entry.Id] = true
+	// _, err = a.r.Save(parent)
 
-	return entry, err
+	// return entry, err
+	return domain.Entry{}, nil
 }

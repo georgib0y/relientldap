@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/georgib0y/gbldap/internal/app/domain"
 )
@@ -78,43 +79,46 @@ func (v *SchemaValidator) getAllOptionalAttrs(objClasses ObjectClassMap) (Attrib
 
 func (v *SchemaValidator) validateRequiredAttr(entry domain.Entry, attr domain.Attribute) error {
 	// TODO more thorough attribute validation
-	if _, ok := entry.Attrs[attr.Numericoid]; !ok {
-		return fmt.Errorf("Attribute %s is required", attr.Numericoid)
-	}
+	log.Panicln("unimplemented, entry Attrs")
+	// if _, ok := entry.Attrs[attr.Numericoid]; !ok {
+	// 	return fmt.Errorf("Attribute %s is required", attr.Numericoid)
+	// }
 
 	return nil
 }
 
 func (v *SchemaValidator) findUnspecifiedAttrs(entry domain.Entry, reqAttrs, optAttrs AttributeMap) error {
-	for oid := range entry.Attrs {
-		_, okReq := reqAttrs[oid]
-		_, okOpt := optAttrs[oid]
+		log.Panicln("unimplemented, entry Attrs")
+	// for oid := range entry.Attrs {
+	// 	_, okReq := reqAttrs[oid]
+	// 	_, okOpt := optAttrs[oid]
 
-		if !okReq && !okOpt {
-			return fmt.Errorf("%s not a part of any required or optional attributes", oid)
-		}
-	}
+	// 	if !okReq && !okOpt {
+	// 		return fmt.Errorf("%s not a part of any required or optional attributes", oid)
+	// 	}
+	// }
 
 	return nil
 }
 
 func (v *SchemaValidator) validateAttr(entry domain.Entry, attr domain.Attribute, required bool) error {
-	vals, ok := entry.Attrs[attr.Numericoid]
-	if !ok {
-		if required {
-			return fmt.Errorf("attr %s is required for entry %d", attr.Numericoid, entry.Id)
-		} else {
-			return nil
-		}
-	}
+		log.Panicln("unimplemented, entry Attrs")
+	// vals, ok := entry.Attrs[attr.Numericoid]
+	// if !ok {
+	// 	if required {
+	// 		return fmt.Errorf("attr %s is required for entry %d", attr.Numericoid, entry.Id)
+	// 	} else {
+	// 		return nil
+	// 	}
+	// }
 
-	if len(vals) == 0 {
-		return fmt.Errorf("values empty in entry %d for attr %s", entry.Id, attr.Numericoid)
-	}
+	// if len(vals) == 0 {
+	// 	return fmt.Errorf("values empty in entry %d for attr %s", entry.Id, attr.Numericoid)
+	// }
 
-	if attr.SingleVal && len(vals) > 1 {
-		return fmt.Errorf("attr %s is signleval but entry %d has multiple values", attr.Numericoid, entry.Id)
-	}
+	// if attr.SingleVal && len(vals) > 1 {
+	// 	return fmt.Errorf("attr %s is signleval but entry %d has multiple values", attr.Numericoid, entry.Id)
+	// }
 
 	// TODO more attr validation
 
@@ -156,14 +160,16 @@ func (s *SchemaValidator) validateAttrs(entry domain.Entry, objClasses ObjectCla
 }
 
 func (s *SchemaValidator) ValidateEntry(entry domain.Entry) error {
-	objClasses, err := s.getAllObjecClasses(entry.ObjClasses)
-	if err != nil {
-		return err
-	}
+	log.Panicln("unimplemented, entry ObjClasses")
+	return nil
+	// objClasses, err := s.getAllObjecClasses(entry.ObjClasses)
+	// if err != nil {
+	// 	return err
+	// }
 
-	if err := s.validateStructuralCount(objClasses); err != nil {
-		return err
-	}
+	// if err := s.validateStructuralCount(objClasses); err != nil {
+	// 	return err
+	// }
 
-	return s.validateAttrs(entry, objClasses)
+	// return s.validateAttrs(entry, objClasses)
 }

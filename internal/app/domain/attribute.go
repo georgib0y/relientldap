@@ -26,3 +26,4 @@ type Attribute struct {
 	Usage                            UsageType
 	Extensions                       string
 }
+

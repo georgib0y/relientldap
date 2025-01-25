@@ -38,12 +38,12 @@ func (n *SchemaNormaliser) NormaliseDN(s string) (domain.DN, error) {
 				return dn, fmt.Errorf("couldn not find attribute %s", ava[0])
 			}
 
-			rdn = append(rdn, domain.AVA{
+			rdn.AddAVA(domain.AVA{
 				Oid: attr.Numericoid,
 				Val: ava[1]})
 		}
 
-		dn = append(dn, rdn)
+		dn.AddRDN(rdn)
 	}
 
 	return dn, nil

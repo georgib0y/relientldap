@@ -2,6 +2,7 @@ package add
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/georgib0y/gbldap/internal/pkg/conn"
 	msg "github.com/georgib0y/gbldap/internal/pkg/message"
@@ -17,9 +18,10 @@ func (a *AddRequestHandler) Handle(c *conn.LdapConn, p *asn1.Packet) error {
 		return err
 	}
 
-	if _, err = AddEntry(m.ProtocolOp); err != nil {
-		return err
-	}
+	log.Panicln("unimplemented AddEntry")
+	// if _, err = AddEntry(m.ProtocolOp); err != nil {
+	// 	return err
+	// }
 
 	res := msg.Message[AddResponse]{
 		MessageId: m.MessageId,
