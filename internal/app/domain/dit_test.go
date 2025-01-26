@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-var test_dit DIT
+var testDit DIT
 
 /*
 Test DIT Structue
@@ -17,89 +17,52 @@ cn=Test1 | ou=TestOu
          | cn=Test2
 */
 
-func generateTestDIT() DIT {	
-	cn_test2 := DITNode {
-		entry: Entry{
-			attrs: map[OID]map[string]bool {
-				"cn": map[string]bool{"Test2": true},
-			},
-		},
-	}
+func generateTestDIT() DIT {
+	dcDev := NewDITNode(nil, NewEntry(WithEntryAttr(AVA{"dc", "dev"})))
+	dcGeorgiboy := NewDITNode(dcDev, NewEntry(WithEntryAttr(AVA{"dc", "georgiboy"})))
+	ouTestOu := NewDITNode(dcGeorgiboy, NewEntry(WithEntryAttr(AVA{"ou", "TestOu"})))
+	cnTest1 := NewDITNode(dcGeorgiboy, NewEntry(WithEntryAttr(AVA{"cn", "Test1"})))
+	cnTest2 := NewDITNode(ouTestOu, NewEntry(WithEntryAttr(AVA{"cn", "Test2"})))
 
-	
-	ou_test_ou := DITNode {
-		children: []*DITNode{&cn_test2},
-		entry: Entry{
-			attrs: map[OID]map[string]bool {
-				"ou": map[string]bool{"TestOu": true},
-			},
-		},
-	}
-	
-	cn_test1 := DITNode {
-		entry: Entry{
-			attrs: map[OID]map[string]bool {
-				"cn": map[string]bool{"Test1": true},
-			},
-		},
-	}
+	ouTestOu.children[cnTest2] = true
+	dcGeorgiboy.children[cnTest1] = true
+	dcGeorgiboy.children[ouTestOu] = true
+	dcDev.children[dcGeorgiboy] = true
 
-	dc_georgiboy := DITNode { children: []*DITNode{&cn_test1, &ou_test_ou},
-		entry: Entry{
-			attrs: map[OID]map[string]bool {
-				"dc": map[string]bool{"georgiboy": true},
-			},
-		},
-	}
-
-	dc_dev := DITNode {
-		children: []*DITNode{&dc_georgiboy},
-		entry: Entry{
-			attrs: map[OID]map[string]bool {
-				"dc": map[string]bool{"dev": true},
-			},
-		},
-	}
-
-	
-	return DIT{&dc_dev}
+	return DIT{dcDev}
 }
 
 func TestMain(m *testing.M) {
-	test_dit = generateTestDIT()
+	testDit = generateTestDIT()
 	code := m.Run()
 	os.Exit(code)
 }
 
-
 func TestGetEntryFindsByDn(t *testing.T) {
-	dn := DN{
-		[]RDN{
-			NewRDN(AVA{"dc", "dev"}),
-			NewRDN(AVA{"dc", "georgiboy"}),
-			NewRDN(AVA{"cn", "Test1"}),
-		}}
-	
-	if _, err := test_dit.GetEntry(dn); err != nil {
+	dn := NewDN(
+		WithRdnAva("cn", "Test1"),
+		WithRdnAva("dc", "georgiboy"),
+		WithRdnAva("dc", "dev"),
+	)
+
+	if _, err := testDit.GetEntry(dn); err != nil {
 		t.Errorf("Did not retrieve entry from dit: %s", err)
 	}
 }
 
 func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
-	dn := DN{
-		[]RDN{
-			NewRDN(AVA{"dc", "dev"}),
-			NewRDN(AVA{"dc", "georgiboy"}),
-			NewRDN(AVA{"cn", "Nonexistent"}),
-		}}
+	dn := NewDN(
+		WithRdnAva("cn", "Nonexistent"),
+		WithRdnAva("dc", "georgiboy"),
+		WithRdnAva("dc", "dev"),
+	)
 
-	expectedMatchedDn := DN{
-		[]RDN{
-			NewRDN(AVA{"dc", "dev"}),
-			NewRDN(AVA{"dc", "georgiboy"}),
-		}}
+	expectedMatchedDn := NewDN(
+		WithRdnAva("dc", "georgiboy"),
+		WithRdnAva("dc", "dev"),
+	)
 
-	_, err := test_dit.GetEntry(dn)
+	_, err := testDit.GetEntry(dn)
 
 	if err == nil {
 		t.Fatal("Expected error, got nil")
@@ -117,4 +80,85 @@ func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 	if !reflect.DeepEqual(expectedMatchedDn, nfErr.matchedDn) {
 		t.Errorf("Expected matched DN (%s) and nfErr matchedDN (%s) do not match", expectedMatchedDn, nfErr.matchedDn)
 	}
+}
+
+func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
+	dn := NewDN(
+		WithRdnAva("cn", "New Object"),
+		WithRdnAva("dc", "georgiboy"),
+		WithRdnAva("dc", "dev"),
+	)
+
+	entry := NewEntry(
+		WithEntryAttr(AVA{"givenName", "New"}),
+		WithEntryAttr(AVA{"sn", "Object"}),
+	)
+
+	err := testDit.InsertEntry(dn, entry)
+	if err != nil {
+		t.Fatalf("Error inserting new entry: %s", err)
+	}
+
+	entry, err = testDit.GetEntry(dn)
+	if err != nil {
+		t.Fatalf("Error retrieving new entry after inserting: %s", err)
+	}
+
+	expAttrs := map[OID]string{
+		"givenName": "New",
+		"sn":        "Object",
+		"cn":        "New Object",
+	}
+
+	for o, v := range expAttrs {
+		if !entry.ContainsAttr(o, v) {
+			t.Errorf("Entry is missing attr: %s: %s", o, v)
+		}
+	}
+
+}
+
+func TestDeleteEntryDeletesNode(t *testing.T) {
+	dn := NewDN(
+		WithRdnAva("cn", "Test1"),
+		WithRdnAva("dc", "georgiboy"),
+		WithRdnAva("dc", "dev"),
+	)
+
+	if err := testDit.DeleteEntry(dn); err != nil {
+		t.Fatal("Error deleting entry: ", err)
+	}
+
+	_, err := testDit.GetEntry(dn)
+
+	var nfErr *NodeNotFoundError
+	if !errors.As(err, &nfErr) {
+		t.Fatal("Unexpected error getting deleted entry: ", err)
+	} else if err == nil {
+		t.Fatal("Expected not found error when getting deleted entry, got nil")
+	}
+}
+
+func TestDeleteEntryFailsOnNonLeafNode(t *testing.T) {
+	dn := NewDN(
+		WithRdnAva("ou", "TestOu"),
+		WithRdnAva("dc", "georgiboy"),
+		WithRdnAva("dc", "dev"),
+	)
+
+	err := testDit.DeleteEntry(dn)
+
+	if !errors.Is(err, ErrNodeNotLeaf) {
+		t.Fatal("Expected Node Not Leaf error, got: ", err)
+	}
+}
+
+func TestModifyAddEntryAddsAttributes(t *testing.T) {
+	dn := NewDN(
+		WithRdnAva("cn", "Test1"),
+		WithRdnAva("dc", "georgiboy"),
+		WithRdnAva("dc", "dev"),
+	)
+
+	testDit.ModifyEntry
 }

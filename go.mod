@@ -1,4 +1,4 @@
-module github.com/georgib0y/gbldap
+module github.com/georgib0y/relientldap
 
 go 1.22.6
 

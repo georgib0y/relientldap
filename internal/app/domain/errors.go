@@ -1,12 +1,16 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
-	"log"
+)
+
+var (
+	ErrNodeNotLeaf = errors.New("Node is not a leaf node")
 )
 
 type NodeNotFoundError struct {
-	requestedDN,	matchedDn DN
+	requestedDN, matchedDn DN
 }
 
 func (e NodeNotFoundError) Error() string {
@@ -14,6 +18,5 @@ func (e NodeNotFoundError) Error() string {
 }
 
 func (e *NodeNotFoundError) prependMatchedDn(rdn RDN) {
-	log.Println("prepending: ", rdn)
 	e.matchedDn.rdns = append([]RDN{rdn}, e.matchedDn.rdns...)
 }
