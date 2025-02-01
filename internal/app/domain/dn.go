@@ -31,7 +31,7 @@ type RDN struct {
 }
 
 func NewRDN(options ...RDNOption) RDN {
-	r := RDN{}
+	r := RDN{map[AVA]bool{}}
 
 	for _, o := range options {
 		o(&r)
@@ -123,6 +123,20 @@ func (dn DN) Clone() DN {
 	}
 
 	return DN{rdns}
+}
+
+func CompareDNs(dn1, dn2 DN) bool {
+	if len(dn1.rdns) != len(dn2.rdns) {
+		return false
+	}
+
+	for i := range dn1.rdns {
+		if !CompareRDNs(dn1.rdns[i], dn2.rdns[2]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (dn *DN) AddRDN(rdn RDN) {

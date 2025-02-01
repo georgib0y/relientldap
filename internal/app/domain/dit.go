@@ -42,10 +42,6 @@ func (d DIT) GetEntry(dn DN) (Entry, error) {
 	return node.entry, nil
 }
 
-// TODO passing the dn directly to the entry without cloning it means that the rdn slice could be
-// modified externally after the call and the entry dn would change
-// not sure if to clone the dn or just be carefull
-
 func (d DIT) InsertEntry(dn DN, entry Entry) error {
 	pDn := dn.GetParentDN()
 	pNode, err := d.getNode(pDn)
@@ -70,8 +66,8 @@ func (d DIT) ModifyEntry(dn DN, ops ...ChangeOperation) error {
 		return err
 	}
 
+	// by cloning the entry and assigning the new entry to the node, this operation becomes atomic
 	entry := node.entry.Clone()
-
 	for _, op := range ops {
 		if err = op(&entry); err != nil {
 			return err
@@ -184,4 +180,13 @@ func getNodeRecursive(rdns []RDN, node *DITNode) (*DITNode, error) {
 	// prepend this rdn to the matched rdn
 	nfErr.prependMatchedDn(rdns[0])
 	return nil, nfErr
+}
+
+type WalkTreeFunc func(Entry)
+
+func WalkTree(n *DITNode, fn WalkTreeFunc) {
+	fn(n.entry)
+	for c := range n.children {
+		WalkTree(n, fn)
+	}
 }

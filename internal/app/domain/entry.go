@@ -99,6 +99,7 @@ func (e *Entry) RemoveAttr(ava AVA) bool {
 
 // TODO better name?
 func (e *Entry) RemoveAllAttr(oid OID) bool {
+	log.Print(e.attrs)
 	if _, ok := e.attrs[oid]; !ok {
 		return false
 	}
@@ -168,6 +169,7 @@ func ReplaceOperation(oid OID, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		// do nothing if the attribue does not exist
 		if !e.RemoveAllAttr(oid) {
+			log.Printf("replace attr does not exist: \"%s\"", oid)
 			return nil
 		}
 

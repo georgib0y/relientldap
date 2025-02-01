@@ -6,7 +6,8 @@ import (
 )
 
 var (
-	ErrNodeNotLeaf = errors.New("Node is not a leaf node")
+	ErrNodeNotLeaf  = errors.New("Node is not a leaf node")
+	ErrUnknownScope = errors.New("Unknown scope")
 )
 
 type NodeNotFoundError struct {
