@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/georgib0y/gbldap/internal/app/domain"
+	"github.com/georgib0y/relientldap/internal/app/domain/dit"
 )
 
 type SchemaNormaliser struct {
@@ -15,12 +15,12 @@ func NewSchemaNormaliser(r Repo) *SchemaNormaliser {
 	return &SchemaNormaliser{r}
 }
 
-func (n *SchemaNormaliser) NormaliseDN(s string) (domain.DN, error) {
-	dn := domain.DN{}
+func (n *SchemaNormaliser) NormaliseDN(s string) (dit.DN, error) {
+	dn := dit.DN{}
 
 	// TODO multivalues with same key (if bothered)
 	for _, rdnStr := range strings.Split(s, ",") {
-		rdn := domain.RDN{}
+		rdn := dit.RDN{}
 		for _, avaStr := range strings.Split(rdnStr, "+") {
 			ava := strings.Split(avaStr, "=")
 
@@ -38,7 +38,7 @@ func (n *SchemaNormaliser) NormaliseDN(s string) (domain.DN, error) {
 				return dn, fmt.Errorf("couldn not find attribute %s", ava[0])
 			}
 
-			rdn.AddAVA(domain.AVA{
+			rdn.AddAVA(dit.AVA{
 				Oid: attr.Numericoid,
 				Val: ava[1]})
 		}
@@ -49,8 +49,8 @@ func (n *SchemaNormaliser) NormaliseDN(s string) (domain.DN, error) {
 	return dn, nil
 }
 
-func (n *SchemaNormaliser) NormaliseObjClasses(objNames map[string]bool) (map[domain.OID]bool, error) {
-	objClasses := map[domain.OID]bool{}
+func (n *SchemaNormaliser) NormaliseObjClasses(objNames map[string]bool) (map[dit.OID]bool, error) {
+	objClasses := map[dit.OID]bool{}
 
 	for name := range objNames {
 		objClass, found, err := n.r.FindObjClassByName(name)
@@ -66,8 +66,8 @@ func (n *SchemaNormaliser) NormaliseObjClasses(objNames map[string]bool) (map[do
 	return objClasses, nil
 }
 
-func (n *SchemaNormaliser) NormaliseAttrs(attributes map[string]map[string]bool) (map[domain.OID]map[string]bool, error) {
-	attrs := map[domain.OID]map[string]bool{}
+func (n *SchemaNormaliser) NormaliseAttrs(attributes map[string]map[string]bool) (map[dit.OID]map[string]bool, error) {
+	attrs := map[dit.OID]map[string]bool{}
 
 	for key, vals := range attributes {
 		if key == "objectClass" {

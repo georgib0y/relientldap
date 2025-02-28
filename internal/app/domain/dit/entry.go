@@ -1,4 +1,4 @@
-package domain
+package dit
 
 import (
 	"fmt"
@@ -7,15 +7,26 @@ import (
 )
 
 type Entry struct {
-	dn    DN
-	attrs map[OID]map[string]bool
+	dn         DN
+	objClasses map[OID]bool
+	attrs      map[OID]map[string]bool
 }
+
+// TODO better validation when creating entrys - ie must have at least one object class
 
 type EntryOption func(*Entry)
 
 func WithDN(dn DN) EntryOption {
 	return func(e *Entry) {
 		e.dn = dn
+	}
+}
+
+func WithObjClass(oid ...OID) EntryOption {
+	return func(e *Entry) {
+		for _, o := range oid {
+			e.objClasses[o] = true
+		}
 	}
 }
 

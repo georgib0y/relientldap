@@ -4,22 +4,22 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/georgib0y/gbldap/internal/app/domain"
+	"github.com/georgib0y/relientldap/internal/app/domain/dit"
 )
 
 type Normaliser interface {
-	NormaliseDN(dn string) (domain.DN, error)
-	NormaliseAttrs(attrs map[string]map[string]bool) (map[domain.OID]map[string]bool, error)
-	NormaliseObjClasses(objClasses map[string]bool) (map[domain.OID]bool, error)
+	NormaliseDN(dn string) (dit.DN, error)
+	NormaliseAttrs(attrs map[string]map[string]bool) (map[dit.OID]map[string]bool, error)
+	NormaliseObjClasses(objClasses map[string]bool) (map[dit.OID]bool, error)
 }
 
 type Validator interface {
-	ValidateEntry(domain.Entry) error
+	ValidateEntry(dit.Entry) error
 }
 
 type entryRepo interface {
-	FindByDN(domain.DN) (domain.Entry, bool, error)
-	Save(domain.Entry) (domain.Entry, error)
+	FindByDN(dit.DN) (dit.Entry, bool, error)
+	Save(dit.Entry) (dit.Entry, error)
 }
 
 type AddRequestService struct {
@@ -28,7 +28,7 @@ type AddRequestService struct {
 	r entryRepo
 }
 
-func (a *AddRequestService) normaliseObjClasses(ar AddRequest) (map[domain.OID]bool, error) {
+func (a *AddRequestService) normaliseObjClasses(ar AddRequest) (map[dit.OID]bool, error) {
 	objs, ok := ar.Attributes["objectClass"]
 	if !ok {
 		return nil, fmt.Errorf("no object classes specified")
@@ -36,7 +36,7 @@ func (a *AddRequestService) normaliseObjClasses(ar AddRequest) (map[domain.OID]b
 	return a.n.NormaliseObjClasses(objs)
 }
 
-func (a *AddRequestService) normaliseAttributes(ar AddRequest) (map[domain.OID]map[string]bool, error) {
+func (a *AddRequestService) normaliseAttributes(ar AddRequest) (map[dit.OID]map[string]bool, error) {
 	attrs := ar.Attributes
 	delete(attrs, "objectClass")
 
@@ -58,60 +58,60 @@ func (a *AddRequest) splitAttrs(ar AddRequest) (map[string]bool, map[string]map[
 	return objs, attrs
 }
 
-func (a *AddRequestService) AddEntry(ar AddRequest) (domain.Entry, error) {
+func (a *AddRequestService) AddEntry(ar AddRequest) (dit.Entry, error) {
 	log.Panicln("unimplemented")
 	// dn, err := a.n.NormaliseDN(ar.Entry)
 	// if err != nil {
-	// 	return domain.Entry{}, err
+	// 	return dit.Entry{}, err
 	// }
 
 	// _, found, err := a.r.FindByDN(dn)
 	// if err != nil {
-	// 	return domain.Entry{}, err
+	// 	return dit.Entry{}, err
 	// }
 
 	// if found {
-	// 	return domain.Entry{}, fmt.Errorf("entry already exists")
+	// 	return dit.Entry{}, fmt.Errorf("entry already exists")
 	// }
 
 	// parent, found, err := a.r.FindByDN(dn.ParentDN())
 	// if err != nil {
-	// 	return domain.Entry{}, err
+	// 	return dit.Entry{}, err
 	// }
 
 	// if !found {
-	// 	return domain.Entry{}, fmt.Errorf("could not find entry parent")
+	// 	return dit.Entry{}, fmt.Errorf("could not find entry parent")
 	// }
 
 	// objClasses, err := a.normaliseObjClasses(ar)
 	// if err != nil {
-	// 	return domain.Entry{}, err
+	// 	return dit.Entry{}, err
 	// }
 
 	// attrs, err := a.normaliseAttributes(ar)
 	// if err != nil {
-	// 	return domain.Entry{}, err
+	// 	return dit.Entry{}, err
 	// }
 
-	// entry := domain.Entry{
+	// entry := dit.Entry{
 	// 	Parent:     parent.Id,
-	// 	Children:   map[domain.ID]bool{},
+	// 	Children:   map[dit.ID]bool{},
 	// 	ObjClasses: objClasses,
 	// 	Attrs:      attrs,
 	// }
 
 	// if err = a.v.ValidateEntry(entry); err != nil {
-	// 	return domain.Entry{}, err
+	// 	return dit.Entry{}, err
 	// }
 
 	// entry, err = a.r.Save(entry)
 	// if err != nil {
-	// 	return domain.Entry{}, err
+	// 	return dit.Entry{}, err
 	// }
 
 	// parent.Children[entry.Id] = true
 	// _, err = a.r.Save(parent)
 
 	// return entry, err
-	return domain.Entry{}, nil
+	return dit.Entry{}, nil
 }

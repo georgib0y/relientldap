@@ -1,10 +1,13 @@
 package schema
 
-import "github.com/georgib0y/gbldap/internal/app/domain"
+import (
+	"github.com/georgib0y/relientldap/internal/app/domain/dit"
+	"github.com/georgib0y/relientldap/internal/app/domain/schema"
+)
 
 type Repo interface {
-	GetObjClass(oid domain.OID) (domain.ObjectClass, error)
-	GetAttribute(oid domain.OID) (domain.Attribute, error)
-	FindAttrByName(name string) (domain.Attribute, bool, error)
-	FindObjClassByName(name string) (domain.ObjectClass, bool, error)
+	GetObjClass(oid dit.OID) (schema.ObjectClass, error)
+	GetAttribute(oid dit.OID) (schema.Attribute, error)
+	FindAttrByName(name string) (schema.Attribute, bool, error)
+	FindObjClassByName(name string) (schema.ObjectClass, bool, error)
 }

@@ -1,4 +1,6 @@
-package domain
+package schema
+
+import "github.com/georgib0y/relientldap/internal/app/domain/dit"
 
 type ObjectClassKind int
 
@@ -9,11 +11,11 @@ const (
 )
 
 type ObjectClass struct {
-	Numericoid          OID
+	Numericoid          dit.OID
 	Names               map[string]bool
 	Desc                string
 	Obsolete            bool
-	SupOids             map[OID]bool
+	SupOids             map[dit.OID]bool
 	Kind                ObjectClassKind
-	MustAttrs, MayAttrs map[OID]bool
+	MustAttrs, MayAttrs map[dit.OID]bool
 }

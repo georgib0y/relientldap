@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/georgib0y/gbldap/internal/pkg/conn"
-	msg "github.com/georgib0y/gbldap/internal/pkg/message"
+	"github.com/georgib0y/relientldap/internal/pkg/conn"
+	msg "github.com/georgib0y/relientldap/internal/pkg/message"
 	asn1 "github.com/go-asn1-ber/asn1-ber"
 )
 

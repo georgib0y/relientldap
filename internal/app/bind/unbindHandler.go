@@ -1,7 +1,7 @@
 package bind
 
 import (
-	"github.com/georgib0y/gbldap/internal/pkg/conn"
+	"github.com/georgib0y/relientldap/internal/pkg/conn"
 	asn1 "github.com/go-asn1-ber/asn1-ber"
 )
 

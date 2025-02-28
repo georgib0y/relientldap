@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/georgib0y/gbldap/internal/app/domain"
+	"github.com/georgib0y/relientldap/internal/app/domain/dit"
+	"github.com/georgib0y/relientldap/internal/app/domain/schema"
 )
 
-type ObjectClassMap map[domain.OID]domain.ObjectClass
-type AttributeMap map[domain.OID]domain.Attribute
+type ObjectClassMap map[dit.OID]schema.ObjectClass
+type AttributeMap map[dit.OID]schema.Attribute
 
 type SchemaValidator struct {
 	r Repo
 }
 
-func (v *SchemaValidator) getAllObjecClasses(oids map[domain.OID]bool) (ObjectClassMap, error) {
+func (v *SchemaValidator) getAllObjecClasses(oids map[dit.OID]bool) (ObjectClassMap, error) {
 	objClasses := ObjectClassMap{}
 
 	for oid := range oids {
@@ -31,7 +32,7 @@ func (v *SchemaValidator) getAllObjecClasses(oids map[domain.OID]bool) (ObjectCl
 func (v *SchemaValidator) validateStructuralCount(objClasses ObjectClassMap) error {
 	count := 0
 	for _, objClass := range objClasses {
-		if objClass.Kind == domain.Structural {
+		if objClass.Kind == schema.Structural {
 			count++
 		}
 	}
@@ -77,7 +78,7 @@ func (v *SchemaValidator) getAllOptionalAttrs(objClasses ObjectClassMap) (Attrib
 	return may, nil
 }
 
-func (v *SchemaValidator) validateRequiredAttr(entry domain.Entry, attr domain.Attribute) error {
+func (v *SchemaValidator) validateRequiredAttr(entry dit.Entry, attr schema.Attribute) error {
 	// TODO more thorough attribute validation
 	log.Panicln("unimplemented, entry Attrs")
 	// if _, ok := entry.Attrs[attr.Numericoid]; !ok {
@@ -87,8 +88,8 @@ func (v *SchemaValidator) validateRequiredAttr(entry domain.Entry, attr domain.A
 	return nil
 }
 
-func (v *SchemaValidator) findUnspecifiedAttrs(entry domain.Entry, reqAttrs, optAttrs AttributeMap) error {
-		log.Panicln("unimplemented, entry Attrs")
+func (v *SchemaValidator) findUnspecifiedAttrs(entry dit.Entry, reqAttrs, optAttrs AttributeMap) error {
+	log.Panicln("unimplemented, entry Attrs")
 	// for oid := range entry.Attrs {
 	// 	_, okReq := reqAttrs[oid]
 	// 	_, okOpt := optAttrs[oid]
@@ -101,8 +102,8 @@ func (v *SchemaValidator) findUnspecifiedAttrs(entry domain.Entry, reqAttrs, opt
 	return nil
 }
 
-func (v *SchemaValidator) validateAttr(entry domain.Entry, attr domain.Attribute, required bool) error {
-		log.Panicln("unimplemented, entry Attrs")
+func (v *SchemaValidator) validateAttr(entry dit.Entry, attr schema.Attribute, required bool) error {
+	log.Panicln("unimplemented, entry Attrs")
 	// vals, ok := entry.Attrs[attr.Numericoid]
 	// if !ok {
 	// 	if required {
@@ -125,7 +126,7 @@ func (v *SchemaValidator) validateAttr(entry domain.Entry, attr domain.Attribute
 	return nil
 }
 
-func (s *SchemaValidator) validateAttrs(entry domain.Entry, objClasses ObjectClassMap) error {
+func (s *SchemaValidator) validateAttrs(entry dit.Entry, objClasses ObjectClassMap) error {
 	reqAttrs, err := s.getAllRequiredAttrs(objClasses)
 	if err != nil {
 		return err
@@ -159,7 +160,7 @@ func (s *SchemaValidator) validateAttrs(entry domain.Entry, objClasses ObjectCla
 	return nil
 }
 
-func (s *SchemaValidator) ValidateEntry(entry domain.Entry) error {
+func (s *SchemaValidator) ValidateEntry(entry dit.Entry) error {
 	log.Panicln("unimplemented, entry ObjClasses")
 	return nil
 	// objClasses, err := s.getAllObjecClasses(entry.ObjClasses)
