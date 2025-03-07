@@ -1,7 +1,10 @@
 package schema
 
 import (
-	"github.com/georgib0y/relientldap/internal/app/domain/dit"
+	"fmt"
+	"strings"
+
+	"github.com/georgib0y/relientldap/internal/model/dit"
 )
 
 type ObjectClassKind int
@@ -11,6 +14,19 @@ const (
 	Structural
 	Auxilary
 )
+
+func (k ObjectClassKind) String() string {
+	switch k {
+	case Abstract:
+		return "ABSTRACT"
+	case Structural:
+		return "STRUCTURAL"
+	case Auxilary:
+		return "AUXILARY"
+	}
+
+	return fmt.Sprintf("unknown (%d)", k)
+}
 
 type ObjectClass struct {
 	numericoid          dit.OID
@@ -44,9 +60,9 @@ func WithDesc(desc string) ObjectClassOption {
 	}
 }
 
-func WithObsolete() ObjectClassOption {
+func WithObsolete(obsolete bool) ObjectClassOption {
 	return func(oc *ObjectClass) {
-		oc.obsolete = true
+		oc.obsolete = obsolete
 	}
 }
 
@@ -93,4 +109,32 @@ func NewObjectClass(options ...ObjectClassOption) ObjectClass {
 	}
 
 	return oc
+}
+
+func (o ObjectClass) String() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Numericoid: %s\n", string(o.numericoid))
+	sb.WriteString("Names:")
+	for n := range o.names {
+		sb.WriteString(" " + n)
+	}
+	fmt.Fprintf(&sb, "\nDesc: %s\n", o.desc)
+	fmt.Fprintf(&sb, "Obsolete: %t\n", o.obsolete)
+	sb.WriteString("Sup Oids:")
+	for s := range o.supOids {
+		sb.WriteString(" " + string(s))
+	}
+	fmt.Fprintf(&sb, "\nKind: %s\n", o.kind)
+
+	sb.WriteString("Must:")
+	for a := range o.mustAttrs {
+		sb.WriteString(" " + string(a))
+	}
+
+	sb.WriteString("\nMay:")
+	for a := range o.mayAttrs {
+		sb.WriteString(" " + string(a))
+	}
+
+	return sb.String()
 }

@@ -1,9 +1,5 @@
 package dit
 
-import (
-	"log"
-)
-
 type SearchScope int
 
 const (

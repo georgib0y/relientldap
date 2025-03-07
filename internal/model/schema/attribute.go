@@ -1,5 +1,7 @@
 package schema
 
+import "github.com/georgib0y/relientldap/internal/model/dit"
+
 type EqualityRule int
 type OrderingRule int
 type SubstringRule int
@@ -13,11 +15,11 @@ const (
 )
 
 type Attribute struct {
-	Numericoid                       OID
+	Numericoid                       dit.OID
 	Names                            map[string]bool
 	Desc                             string
 	Obsolete                         bool
-	SupOids                          map[OID]bool
+	SupOids                          map[dit.OID]bool
 	EqRule                           EqualityRule
 	OrdRule                          OrderingRule
 	SubStrRule                       SubstringRule
@@ -26,4 +28,3 @@ type Attribute struct {
 	Usage                            UsageType
 	Extensions                       string
 }
-

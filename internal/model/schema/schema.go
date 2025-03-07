@@ -1,6 +1,6 @@
 package schema
 
-import "github.com/georgib0y/relientldap/internal/app/domain/dit"
+import "github.com/georgib0y/relientldap/internal/model/dit"
 
 type Schema struct {
 	objClasses map[dit.OID]ObjectClass

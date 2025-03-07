@@ -186,7 +186,7 @@ type WalkTreeFunc func(Entry)
 
 func WalkTree(n *DITNode, fn WalkTreeFunc) {
 	fn(n.entry)
-	for c := range n.children {
+	for _ = range n.children {
 		WalkTree(n, fn)
 	}
 }
