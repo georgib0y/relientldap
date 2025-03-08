@@ -60,9 +60,9 @@ func WithDesc(desc string) ObjectClassOption {
 	}
 }
 
-func WithObsolete(obsolete bool) ObjectClassOption {
+func WithObsolete() ObjectClassOption {
 	return func(oc *ObjectClass) {
-		oc.obsolete = obsolete
+		oc.obsolete = true
 	}
 }
 
@@ -137,4 +137,42 @@ func (o ObjectClass) String() string {
 	}
 
 	return sb.String()
+}
+
+// TODO move this somewhere more useful
+func mapSetsEq[K comparable](m1, m2 map[K]bool) bool {
+	if len(m1) != len(m2) {
+		return false
+	}
+
+	for k := range m1 {
+		if _, ok := m2[k]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+func ObjectClassesAreEqual(o1, o2 ObjectClass) error {
+	switch {
+	case o1.numericoid != o2.numericoid:
+		return fmt.Errorf("numericoids dont match")
+	case !mapSetsEq(o1.names, o2.names):
+		return fmt.Errorf("names dont match")
+	case o1.desc != o2.desc:
+		return fmt.Errorf("descs dont match")
+	case o1.obsolete != o2.obsolete:
+		return fmt.Errorf("obsoletes dont match")
+	case !mapSetsEq(o1.supOids, o2.supOids):
+		return fmt.Errorf("supoids dont match")
+	case o1.kind != o2.kind:
+		return fmt.Errorf("kinds dont match")
+	case !mapSetsEq(o1.mustAttrs, o2.mustAttrs):
+		return fmt.Errorf("musts dont match")
+	case !mapSetsEq(o1.mayAttrs, o2.mayAttrs):
+		return fmt.Errorf("mays dont match")
+	default:
+		return nil
+	}
 }
