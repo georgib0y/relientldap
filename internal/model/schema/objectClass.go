@@ -40,13 +40,13 @@ type ObjectClass struct {
 
 type ObjectClassOption func(*ObjectClass)
 
-func WithOid(oid dit.OID) ObjectClassOption {
+func ObjClassWithOid(oid dit.OID) ObjectClassOption {
 	return func(oc *ObjectClass) {
 		oc.numericoid = oid
 	}
 }
 
-func WithName(names ...string) ObjectClassOption {
+func ObjClassWithName(names ...string) ObjectClassOption {
 	return func(oc *ObjectClass) {
 		for _, n := range names {
 			oc.names[n] = true
@@ -54,19 +54,19 @@ func WithName(names ...string) ObjectClassOption {
 	}
 }
 
-func WithDesc(desc string) ObjectClassOption {
+func ObjClassWithDesc(desc string) ObjectClassOption {
 	return func(oc *ObjectClass) {
 		oc.desc = desc
 	}
 }
 
-func WithObsolete() ObjectClassOption {
+func ObjClassWithObsolete() ObjectClassOption {
 	return func(oc *ObjectClass) {
 		oc.obsolete = true
 	}
 }
 
-func WithSupOid(sup ...dit.OID) ObjectClassOption {
+func ObjClassWithSupOid(sup ...dit.OID) ObjectClassOption {
 	return func(oc *ObjectClass) {
 		for _, s := range sup {
 			oc.supOids[s] = true
@@ -74,13 +74,13 @@ func WithSupOid(sup ...dit.OID) ObjectClassOption {
 	}
 }
 
-func WithKind(kind ObjectClassKind) ObjectClassOption {
+func ObjClassWithKind(kind ObjectClassKind) ObjectClassOption {
 	return func(oc *ObjectClass) {
 		oc.kind = kind
 	}
 }
 
-func WithMustAttr(attr ...dit.OID) ObjectClassOption {
+func ObjClassWithMustAttr(attr ...dit.OID) ObjectClassOption {
 	return func(oc *ObjectClass) {
 		for _, a := range attr {
 			oc.mustAttrs[a] = true
@@ -88,7 +88,7 @@ func WithMustAttr(attr ...dit.OID) ObjectClassOption {
 	}
 }
 
-func WithMayAttr(attr ...dit.OID) ObjectClassOption {
+func ObjClassWithMayAttr(attr ...dit.OID) ObjectClassOption {
 	return func(oc *ObjectClass) {
 		for _, a := range attr {
 			oc.mayAttrs[a] = true

@@ -107,9 +107,9 @@ func TestParsesObjectClass(t *testing.T) {
 		{
 			ldif: `( 2.5.6.0 NAME 'top' DESC 'this is some desc' )`,
 			exp: []schema.ObjectClass{schema.NewObjectClass(
-				schema.WithOid("2.5.6.0"),
-				schema.WithName("top"),
-				schema.WithDesc("this is some desc"),
+				schema.ObjClassWithOid("2.5.6.0"),
+				schema.ObjClassWithName("top"),
+				schema.ObjClassWithDesc("this is some desc"),
 			)},
 		},
 		{
@@ -117,78 +117,79 @@ func TestParsesObjectClass(t *testing.T) {
 ( 2.5.6.1 NAME 'secondTop')`,
 			exp: []schema.ObjectClass{
 				schema.NewObjectClass(
-					schema.WithOid("2.5.6.0"),
-					schema.WithName("top"),
-					schema.WithDesc("somethign"),
+					schema.ObjClassWithOid("2.5.6.0"),
+					schema.ObjClassWithName("top"),
+					schema.ObjClassWithDesc("somethign"),
 				),
 				schema.NewObjectClass(
-					schema.WithOid("2.5.6.1"),
-					schema.WithName("secondTop"),
+					schema.ObjClassWithOid("2.5.6.1"),
+					schema.ObjClassWithName("secondTop"),
 				),
 			},
 		},
 		{
 			ldif: `( 2.5.6.6 NAME ( 'person' 'ps' ) )`,
 			exp: []schema.ObjectClass{schema.NewObjectClass(
-				schema.WithOid("2.5.6.6"),
-				schema.WithName("person", "ps"),
+				schema.ObjClassWithOid("2.5.6.6"),
+				schema.ObjClassWithName("person", "ps"),
 			)},
 		},
 		{
 			ldif: `( 2.5.6.6 NAME ( 'person' 'ps' ) )`,
 			exp: []schema.ObjectClass{schema.NewObjectClass(
-				schema.WithOid("2.5.6.6"),
-				schema.WithName("person", "ps"),
+				schema.ObjClassWithOid("2.5.6.6"),
+				schema.ObjClassWithName("person", "ps"),
 			)},
 		},
 		{
 			ldif: manyOcDefs,
 			exp: []schema.ObjectClass{
 				schema.NewObjectClass(
-					schema.WithOid("2.5.6.11"),
-					schema.WithName("applicationProcess"),
-					schema.WithSupOid("top"),
-					schema.WithKind(schema.Structural),
-					schema.WithMustAttr("cn"),
-					schema.WithMayAttr("seeAlso", "ou", "l", "description"),
+					schema.ObjClassWithOid("2.5.6.11"),
+					schema.ObjClassWithName("applicationProcess"),
+					schema.ObjClassWithSupOid("top"),
+					schema.ObjClassWithKind(schema.Structural),
+					schema.ObjClassWithMustAttr("cn"),
+					schema.ObjClassWithMayAttr("seeAlso", "ou", "l", "description"),
 				),
 				schema.NewObjectClass(
-					schema.WithOid("2.5.6.2"),
-					schema.WithName("country"),
-					schema.WithSupOid("top"),
-					schema.WithKind(schema.Structural),
-					schema.WithMustAttr("c"),
-					schema.WithMayAttr("searchGuide", "description"),
+					schema.ObjClassWithOid("2.5.6.2"),
+					schema.ObjClassWithName("country"),
+					schema.ObjClassWithSupOid("top"),
+					schema.ObjClassWithKind(schema.Structural),
+					schema.ObjClassWithMustAttr("c"),
+					schema.ObjClassWithMayAttr("searchGuide", "description"),
 				),
 				schema.NewObjectClass(
-					schema.WithOid("1.3.6.1.4.1.1466.344"),
-					schema.WithName("dcObject"),
-					schema.WithSupOid("top"),
-					schema.WithKind(schema.Auxilary),
-					schema.WithMustAttr("dc"),
+					schema.ObjClassWithOid("1.3.6.1.4.1.1466.344"),
+					schema.ObjClassWithName("dcObject"),
+					schema.ObjClassWithSupOid("top"),
+					schema.ObjClassWithKind(schema.Auxilary),
+					schema.ObjClassWithMustAttr("dc"),
 				),
 				schema.NewObjectClass(
-					schema.WithOid("2.5.6.14"),
-					schema.WithName("device"),
-					schema.WithSupOid("top"),
-					schema.WithKind(schema.Structural),
-					schema.WithMustAttr("cn"),
-					schema.WithMayAttr("serialNumber", "seeAlso", "owner", "ou", "o", "l", "description"),
+					schema.ObjClassWithOid("2.5.6.14"),
+					schema.ObjClassWithName("device"),
+					schema.ObjClassWithSupOid("top"),
+					schema.ObjClassWithKind(schema.Structural),
+					schema.ObjClassWithMustAttr("cn"),
+					schema.ObjClassWithMayAttr("serialNumber", "seeAlso", "owner", "ou", "o", "l", "description"),
 				),
 				schema.NewObjectClass(
-					schema.WithOid("2.5.6.9"),
-					schema.WithName("groupOfNames"),
-					schema.WithSupOid("top"),
-					schema.WithKind(schema.Structural),
-					schema.WithMustAttr("member", "cn"),
-					schema.WithMayAttr("businessCategory", "seeAlso", "owner", "ou", "o", "description"),
+					schema.ObjClassWithOid("2.5.6.9"),
+					schema.ObjClassWithName("groupOfNames"),
+					schema.ObjClassWithSupOid("top"),
+					schema.ObjClassWithKind(schema.Structural),
+					schema.ObjClassWithMustAttr("member", "cn"),
+					schema.ObjClassWithMayAttr("businessCategory", "seeAlso", "owner", "ou", "o", "description"),
 				),
 			},
 		},
 	}
 
+	p := NewObjectClassParser()
 	for _, test := range tests {
-		oc, err := ParseObjectClasses(strings.NewReader(test.ldif))
+		oc, err := ParseReader(strings.NewReader(test.ldif), p)
 		if err != nil {
 			t.Fatalf("Failed to parse ldif:\n%s\nErr is: %s", test.ldif, err)
 		}
