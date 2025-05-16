@@ -2,50 +2,100 @@ package dit
 
 import (
 	"errors"
-	"os"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/georgib0y/relientldap/internal/model/schema"
 )
+
+const attrLdif string = `
+      ( 0.9.2342.19200300.100.1.25 NAME 'dc'
+         EQUALITY caseIgnoreIA5Match
+         SUBSTR caseIgnoreIA5SubstringsMatch
+         SYNTAX 1.3.6.1.4.1.1466.115.121.1.26
+         SINGLE-VALUE )
+
+      ( 2.5.4.41 NAME 'name'
+         EQUALITY caseIgnoreMatch
+         SUBSTR caseIgnoreSubstringsMatch
+         SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+      ( 2.5.4.11 NAME 'ou'
+         SUP name )
+
+      ( 2.5.4.3 NAME 'cn'
+         SUP name )
+
+      ( 2.5.4.4 NAME 'sn'
+         SUP name )
+
+`
+
+var attrs map[string]*schema.Attribute = map[string]*schema.Attribute{
+	"dc":        schema.NewAttributeBuilder().SetOid("dc").Build(),
+	"ou":        schema.NewAttributeBuilder().SetOid("ou").Build(),
+	"cn":        schema.NewAttributeBuilder().SetOid("cn").Build(),
+	"sn":        schema.NewAttributeBuilder().SetOid("sn").Build(),
+	"fax":       schema.NewAttributeBuilder().SetOid("fax").Build(),
+	"givenName": schema.NewAttributeBuilder().SetOid("givenName").Build(),
+}
 
 /*
 Test DIT Structue
-dc=dev
-dc=georgiboy
-cn=Test1 | ou=TestOu
-         | cn=Test2
+| dc=dev
+--| dc=georgiboy
+----| cn=Test1
+----| ou=TestOu
+------| cn=Test2
 */
 
 func generateTestDIT() DIT {
-	dcDev := NewDITNode(nil, NewEntry(WithEntryAttr(AVA{"dc", "dev"})))
-	dcGeorgiboy := NewDITNode(dcDev, NewEntry(WithEntryAttr(AVA{"dc", "georgiboy"})))
-	ouTestOu := NewDITNode(dcGeorgiboy, NewEntry(WithEntryAttr(AVA{"ou", "TestOu"})))
-	cnTest1 := NewDITNode(dcGeorgiboy, NewEntry(
-		WithEntryAttr(AVA{"cn", "Test1"}),
-		WithEntryAttr(AVA{"sn", "One"}),
-		WithEntryAttr(AVA{"sn", "One-Two"}),
-	))
-	cnTest2 := NewDITNode(ouTestOu, NewEntry(WithEntryAttr(AVA{"cn", "Test2"})))
+	dcDevDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev").
+		Build()
+	dcDev := NewDITNode(nil, NewEntry(WithDN(dcDevDn), WithEntryAttr(attrs["dc"], "dev")))
 
-	ouTestOu.children[cnTest2] = true
-	dcGeorgiboy.children[cnTest1] = true
-	dcGeorgiboy.children[ouTestOu] = true
-	dcDev.children[dcGeorgiboy] = true
+	dcGeorgiboyDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		Build()
+	dcGeorgiboy := NewDITNode(dcDev, NewEntry(WithDN(dcGeorgiboyDn), WithEntryAttr(attrs["dc"], "georgiboy")))
+
+	ouTestOuDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").
+		Build()
+	ouTestOu := NewDITNode(dcGeorgiboy, NewEntry(WithDN(ouTestOuDn), WithEntryAttr(attrs["ou"], "TestOu")))
+
+	cnTest1Dn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["cn"], "Test1").
+		Build()
+	cnTest1 := NewDITNode(dcGeorgiboy, NewEntry(
+		WithDN(cnTest1Dn),
+		WithEntryAttr(attrs["cn"], "Test1"),
+		WithEntryAttr(attrs["sn"], "One"),
+		WithEntryAttr(attrs["sn"], "One-Two"),
+	))
+
+	cnTest2Dn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test2").
+		Build()
+	cnTest2 := NewDITNode(ouTestOu, NewEntry(WithDN(cnTest2Dn), WithEntryAttr(attrs["cn"], "Test2")))
+
+	// add each child entry to their parent node
+	ouTestOu.children[cnTest2] = struct{}{}
+	dcGeorgiboy.children[cnTest1] = struct{}{}
+	dcGeorgiboy.children[ouTestOu] = struct{}{}
+	dcDev.children[dcGeorgiboy] = struct{}{}
 
 	return DIT{dcDev}
 }
 
-func TestMain(m *testing.M) {
-	code := m.Run()
-	os.Exit(code)
-}
-
 func TestGetEntryFindsByDn(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "Test1"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if _, err := dit.GetEntry(dn); err != nil {
 		t.Errorf("Did not retrieve entry from dit: %s", err)
@@ -54,16 +104,9 @@ func TestGetEntryFindsByDn(t *testing.T) {
 
 func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "Nonexistent"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Nonexistent").Build()
 
-	expectedMatchedDn := NewDN(
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	expectedMatchedDn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").Build()
 
 	_, err := dit.GetEntry(dn)
 
@@ -76,7 +119,7 @@ func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 		t.Fatalf("Expected not found erro, got %s", err)
 	}
 
-	if !reflect.DeepEqual(dn, nfErr.requestedDN) {
+	if !CompareDNs(dn, nfErr.requestedDN) {
 		t.Errorf("DN (%s) and requested DN (%s) do not match", dn, nfErr.requestedDN)
 	}
 
@@ -87,15 +130,12 @@ func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 
 func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "New Object"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "New Object").Build()
 
 	entry := NewEntry(
-		WithEntryAttr(AVA{"givenName", "New"}),
-		WithEntryAttr(AVA{"sn", "Object"}),
+		WithEntryAttr(attrs["cn"], "New Object"),
+		WithEntryAttr(attrs["givenName"], "New"),
+		WithEntryAttr(attrs["sn"], "Object"),
 	)
 
 	err := dit.InsertEntry(dn, entry)
@@ -108,15 +148,24 @@ func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 		t.Fatalf("Error retrieving new entry after inserting: %s", err)
 	}
 
-	expAttrs := []AVA{
-		AVA{"givenName", "New"},
-		AVA{"sn", "Object"},
-		AVA{"cn", "New Object"},
+	expAttrs := []struct {
+		attr *schema.Attribute
+		val  string
+	}{
+		{attrs["givenName"], "New"},
+		{attrs["sn"], "Object"},
+		{attrs["cn"], "New Object"},
 	}
 
-	for _, ava := range expAttrs {
-		if !entry.ContainsAttr(ava) {
-			t.Errorf("Entry is missing attr: %s", ava)
+	for _, exp := range expAttrs {
+		contains, err := entry.ContainsAttrVal(exp.attr, exp.val)
+
+		if err != nil {
+			t.Errorf("Error matching attr: %s %s, %s", exp.attr.Oid(), exp.val, err)
+		}
+
+		if !contains {
+			t.Errorf("Entry is missing attr: %s %s", exp.attr.Oid(), exp.val)
 		}
 	}
 
@@ -124,11 +173,7 @@ func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 
 func TestDeleteEntryDeletesNode(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "Test1"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.DeleteEntry(dn); err != nil {
 		t.Fatal("Error deleting entry: ", err)
@@ -146,11 +191,7 @@ func TestDeleteEntryDeletesNode(t *testing.T) {
 
 func TestDeleteEntryFailsOnNonLeafNode(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("ou", "TestOu"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["ou"], "TestOu").Build()
 
 	err := dit.DeleteEntry(dn)
 
@@ -161,17 +202,13 @@ func TestDeleteEntryFailsOnNonLeafNode(t *testing.T) {
 
 func TestModifyAddEntryAddsAttributes(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "Test1"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
-	if err := dit.ModifyEntry(dn, AddOperation("fax", "12345")); err != nil {
+	if err := dit.ModifyEntry(dn, AddOperation(attrs["fax"], "12345")); err != nil {
 		t.Fatal("Got error when adding entry: ", err)
 	}
 
-	ok, err := dit.ContainsAttribute(dn, AVA{"fax", "12345"})
+	ok, err := dit.ContainsAttribute(dn, attrs["fax"], "12345")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -183,17 +220,13 @@ func TestModifyAddEntryAddsAttributes(t *testing.T) {
 
 func TestModifyDeleteSingleEntryDeletesAttribute(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "Test1"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
-	if err := dit.ModifyEntry(dn, DeleteOperation("sn", "One-Two")); err != nil {
+	if err := dit.ModifyEntry(dn, DeleteOperation(attrs["sn"], "One-Two")); err != nil {
 		t.Fatal("Got error when deleting entry: ", err)
 	}
 
-	ok, err := dit.ContainsAttribute(dn, AVA{"sn", "One-Two"})
+	ok, err := dit.ContainsAttribute(dn, attrs["sn"], "One-Two")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -202,7 +235,7 @@ func TestModifyDeleteSingleEntryDeletesAttribute(t *testing.T) {
 		t.Fatal("Attribute not deleted to entry: ", dn)
 	}
 
-	ok, err = dit.ContainsAttribute(dn, AVA{"sn", "One"})
+	ok, err = dit.ContainsAttribute(dn, attrs["sn"], "One")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -214,17 +247,13 @@ func TestModifyDeleteSingleEntryDeletesAttribute(t *testing.T) {
 
 func TestModifyDeleteAllEntryDeletesAttributes(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "Test1"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
-	if err := dit.ModifyEntry(dn, DeleteOperation("sn")); err != nil {
+	if err := dit.ModifyEntry(dn, DeleteOperation(attrs["sn"])); err != nil {
 		t.Fatal("Got error when deleting entry: ", err)
 	}
 
-	ok, err := dit.ContainsAttribute(dn, AVA{"sn", "One-Two"})
+	ok, err := dit.ContainsAttribute(dn, attrs["sn"], "One-Two")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -233,7 +262,7 @@ func TestModifyDeleteAllEntryDeletesAttributes(t *testing.T) {
 		t.Fatal("Attribute not deleted to entry: ", dn)
 	}
 
-	ok, err = dit.ContainsAttribute(dn, AVA{"sn", "One"})
+	ok, err = dit.ContainsAttribute(dn, attrs["sn"], "One")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -245,17 +274,13 @@ func TestModifyDeleteAllEntryDeletesAttributes(t *testing.T) {
 
 func TestModifyReplaceReplacesAttributes(t *testing.T) {
 	dit := generateTestDIT()
-	dn := NewDN(
-		WithRdnAva("cn", "Test1"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
-	if err := dit.ModifyEntry(dn, ReplaceOperation("sn", "Three", "Three-Four")); err != nil {
+	if err := dit.ModifyEntry(dn, ReplaceOperation(attrs["sn"], "Three", "Three-Four")); err != nil {
 		t.Fatal("Got error when replacing entry: ", err)
 	}
 
-	ok, err := dit.ContainsAttribute(dn, AVA{"sn", "One-Two"})
+	ok, err := dit.ContainsAttribute(dn, attrs["sn"], "One-Two")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -264,7 +289,7 @@ func TestModifyReplaceReplacesAttributes(t *testing.T) {
 		t.Fatal("Attribute not deleted from entry: ", dn)
 	}
 
-	ok, err = dit.ContainsAttribute(dn, AVA{"sn", "One"})
+	ok, err = dit.ContainsAttribute(dn, attrs["sn"], "One")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -273,7 +298,7 @@ func TestModifyReplaceReplacesAttributes(t *testing.T) {
 		t.Fatal("Attribute not deleted from entry: ", dn)
 	}
 
-	ok, err = dit.ContainsAttribute(dn, AVA{"sn", "Three"})
+	ok, err = dit.ContainsAttribute(dn, attrs["sn"], "Three")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -282,7 +307,7 @@ func TestModifyReplaceReplacesAttributes(t *testing.T) {
 		t.Fatal("Attribute Three not added to entry: ", dn)
 	}
 
-	ok, err = dit.ContainsAttribute(dn, AVA{"sn", "Three-Four"})
+	ok, err = dit.ContainsAttribute(dn, attrs["sn"], "Three-Four")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -292,30 +317,54 @@ func TestModifyReplaceReplacesAttributes(t *testing.T) {
 	}
 }
 
-func TestModifyDNChangesRDNAndMovesEntry(t *testing.T) {
+/*
+Transform this DIT Structue:
+| dc=dev
+--| dc=georgiboy
+----| cn=Test1
+----| ou=TestOu
+------| cn=Test2
+
+into:
+| dc=dev
+--| dc=georgiboy
+----| ou=TestOu
+------| givenName=Test1Moved
+------| cn=Test2
+*/
+func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
 	dit := generateTestDIT()
 
-	dn := NewDN(
-		WithRdnAva("cn", "Test1"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	dn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["cn"], "Test1").
+		Build()
 
-	rdn := NewRDN(WithAVA("givenName", "Test1Moved"))
+	rdn := NewRDN(WithAVA(attrs["givenName"], "Test1Moved"))
 
-	newSuperDn := NewDN(
-		WithRdnAva("ou", "TestOu"),
-		WithRdnAva("dc", "georgiboy"),
-		WithRdnAva("dc", "dev"),
-	)
+	newSuperDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").
+		Build()
+
+	var sb1 strings.Builder
+	WriteTreeUnderNode(&sb1, dit.root)
+	t.Log(sb1.String())
 
 	err := dit.ModifyEntryDN(dn, rdn, true, &newSuperDn)
 	if err != nil {
 		t.Fatal("Failed to modify dn: ", err)
 	}
 
-	newSuperDn.AddRDN(rdn)
-	newDn := newSuperDn
+	var sb2 strings.Builder
+	WriteTreeUnderNode(&sb2, dit.root)
+	t.Log(sb2.String())
+
+	newDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").
+		AddAvaAsRdn(attrs["givenName"], "Test1Moved").
+		Build()
 
 	entry, err := dit.GetEntry(newDn)
 	if err != nil {
@@ -325,5 +374,6 @@ func TestModifyDNChangesRDNAndMovesEntry(t *testing.T) {
 	if !CompareDNs(entry.dn, newDn) {
 		t.Fatalf("Failed to update DN of entry, got: %s expected: %s", entry.dn, newDn)
 	}
-	entry.ContainsAttr(AVA{"givenName", "Test1Moved"})
+
+	entry.ContainsAttrVal(attrs["givenName"], "Test1Moved")
 }

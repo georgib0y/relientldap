@@ -7,9 +7,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/georgib0y/relientldap/internal/model/dit"
 	"github.com/georgib0y/relientldap/internal/model/schema"
 )
+
+type schemaBuilder[T schema.SchemaObject] interface {
+	Build() T
+}
+
+type builderResolver[T schema.SchemaObject] interface {
+	schemaBuilder[T]
+	Resolve(oids map[schema.OID]T) error
+}
 
 type parserState int
 
@@ -74,45 +82,45 @@ func (p *tokenParser) NextToken() (Token, bool) {
 	return t, true
 }
 
-func (p *tokenParser) parseNumericoid() (dit.OID, error) {
+func (p *tokenParser) parseNumericoid() (schema.OID, error) {
 	t, ok := p.NextToken()
 	if !ok {
-		return dit.OID(""), fmt.Errorf("expected numericoid got eof")
+		return schema.OID(""), fmt.Errorf("expected numericoid got eof")
 	}
 
 	log.Printf("token is %s: %s", t.tokenType, t.val)
 
 	if t.tokenType != NUMERICOID {
-		return dit.OID(""), fmt.Errorf("expected numericoid, got %s: %s", t.tokenType, t.val)
+		return schema.OID(""), fmt.Errorf("expected numericoid, got %s: %s", t.tokenType, t.val)
 	}
 
 	p.state = EXPECT_KEYWORD
-	return dit.OID(t.val), nil
+	return schema.OID(t.val), nil
 }
 
-func (p *tokenParser) parseNoidlen() (dit.OID, int, error) {
+func (p *tokenParser) parseNoidlen() (schema.OID, int, error) {
 	t, ok := p.NextToken()
 	if !ok {
-		return dit.OID(""), 0, fmt.Errorf("expected numericoid/noidlen got eof")
+		return schema.OID(""), 0, fmt.Errorf("expected numericoid/noidlen got eof")
 	}
 
 	log.Printf("token is %s: %s", t.tokenType, t.val)
 
 	if t.tokenType == NUMERICOID {
 		p.state = EXPECT_KEYWORD
-		return dit.OID(t.val), 0, nil
+		return schema.OID(t.val), 0, nil
 	}
 
 	if t.tokenType != NOIDLEN {
-		return dit.OID(""), 0, fmt.Errorf("expected numericoid or noidlen, got %s: %s", t.tokenType, t.val)
+		return schema.OID(""), 0, fmt.Errorf("expected numericoid or noidlen, got %s: %s", t.tokenType, t.val)
 	}
 
 	// at this point t.val is definitly in the correct noidlen format
 	spl := strings.Split(t.val, "{")
-	oid := dit.OID(spl[0])
+	oid := schema.OID(spl[0])
 	len, err := strconv.Atoi(spl[1][:len(spl[1])-1])
 	if err != nil {
-		return dit.OID(""), 0, fmt.Errorf("Failed to parse noidlen len (very unexpectedly!): %w", err)
+		return schema.OID(""), 0, fmt.Errorf("Failed to parse noidlen len (very unexpectedly!): %w", err)
 	}
 
 	p.state = EXPECT_KEYWORD
@@ -191,38 +199,38 @@ func (p *tokenParser) parseQdstring() (string, error) {
 	return stripQuotes(t.val), nil
 }
 
-func (p *tokenParser) parseOid() (dit.OID, error) {
+func (p *tokenParser) parseOid() (schema.OID, error) {
 	t, ok := p.NextToken()
 	if !ok {
-		return dit.OID(""), fmt.Errorf("parsing oid got eof")
+		return schema.OID(""), fmt.Errorf("parsing oid got eof")
 	}
 
 	if t.tokenType != NUMERICOID && t.tokenType != KEYWORD && t.tokenType != DESCR {
-		return dit.OID(""), fmt.Errorf("expected numericoid, keyword or descr, got %s: %s", t.tokenType, t.val)
+		return schema.OID(""), fmt.Errorf("expected numericoid, keyword or descr, got %s: %s", t.tokenType, t.val)
 	}
 
 	p.state = EXPECT_KEYWORD
-	return dit.OID(t.val), nil
+	return schema.OID(t.val), nil
 }
 
-func (p *tokenParser) parseOids() ([]dit.OID, error) {
+func (p *tokenParser) parseOids() ([]schema.OID, error) {
 	t, ok := p.NextToken()
 	if !ok {
-		return []dit.OID{}, fmt.Errorf("parsing oid got eof")
+		return []schema.OID{}, fmt.Errorf("parsing oid got eof")
 	}
 
 	// if only one oid
 	// keyword is a subset of descr and will be matched before it first
 	if t.tokenType == NUMERICOID || t.tokenType == KEYWORD || t.tokenType == DESCR {
 		p.state = EXPECT_KEYWORD
-		return []dit.OID{dit.OID(t.val)}, nil
+		return []schema.OID{schema.OID(t.val)}, nil
 	}
 
 	if t.tokenType != LPAREN {
-		return []dit.OID{}, fmt.Errorf("expected oid or lparen, got %s: %s", t.tokenType, t.val)
+		return []schema.OID{}, fmt.Errorf("expected oid or lparen, got %s: %s", t.tokenType, t.val)
 	}
 
-	oids := []dit.OID{}
+	oids := []schema.OID{}
 	for {
 		next, ok := p.NextToken()
 		if !ok {
@@ -248,7 +256,7 @@ func (p *tokenParser) parseOids() ([]dit.OID, error) {
 			return oids, fmt.Errorf("expected descr or rparen, got %s: %s", t.tokenType, t.val)
 		}
 
-		oids = append(oids, dit.OID(t.val))
+		oids = append(oids, schema.OID(t.val))
 	}
 }
 
@@ -279,27 +287,57 @@ func findMatchingParen(tokens []Token, lparenIdx int) (int, error) {
 	return rparenIdx, nil
 }
 
-type Parser[T any] interface {
-	SetTokens([]Token)
+func resolveDepends[T schema.SchemaObject](builders map[builderResolver[T]]struct{}) (map[schema.OID]T, error) {
+	resolved := map[schema.OID]T{}
+	last := 0
+	builders_count := len(builders)
+
+outter:
+	for len(resolved) < builders_count {
+		for b := range builders {
+			if err := b.Resolve(resolved); err != nil {
+				continue
+			}
+
+			r := b.Build()
+			resolved[r.Oid()] = r
+			delete(builders, b)
+		}
+
+		if len(resolved) == last {
+			break outter
+		}
+		last = len(resolved)
+	}
+
+	if len(resolved) < builders_count {
+		// TODO log remaining
+		return nil, fmt.Errorf("Unable to resolve all superior dependencies")
+	}
+
+	return resolved, nil
+}
+
+type Parser[T schema.SchemaObject] interface {
+	SetTokens(tokens []Token)
 	NextToken() (Token, bool)
-	Build() (T, error)
-	HandleNumericoid(oid dit.OID) error
+	Builder() schemaBuilder[T]
+	HandleNumericoid(oid schema.OID) error
 	HandleKeyword(kw string) error
 }
 
-func Parse[T any](p Parser[T]) (T, error) {
-	var zero T
+func Parse[T schema.SchemaObject](p Parser[T]) error {
 	// numericoid is always the first element in the schema
 	t, ok := p.NextToken()
 	if !ok {
-		return zero, fmt.Errorf("End of tokens, expected numericoid")
+		return fmt.Errorf("End of tokens, expected numericoid")
 	}
 	if t.tokenType != NUMERICOID {
-		return zero, fmt.Errorf("expected numericoid first, got %s: %s", t.tokenType, t.val)
+		return fmt.Errorf("expected numericoid first, got %s: %s", t.tokenType, t.val)
 	}
 
-	if err := p.HandleNumericoid(dit.OID(t.val)); err != nil {
-		return zero, err
+	if err := p.HandleNumericoid(schema.OID(t.val)); err != nil {
+		return err
 	}
 
 	for {
@@ -308,18 +346,18 @@ func Parse[T any](p Parser[T]) (T, error) {
 			break
 		}
 		if t.tokenType != KEYWORD {
-			return zero, fmt.Errorf("expected keyword, got %s: %s", t.tokenType, t.val)
+			return fmt.Errorf("expected keyword, got %s: %s", t.tokenType, t.val)
 		}
 
 		if err := p.HandleKeyword(t.val); err != nil {
-			return zero, err
+			return err
 		}
 	}
 
-	return p.Build()
+	return nil
 }
 
-func ParseReader[T any](r io.Reader, p Parser[T]) ([]T, error) {
+func ParseReader[T schema.SchemaObject](r io.Reader, p Parser[T]) (map[schema.OID]T, error) {
 	tokens, err := tokenise(r)
 	if err != nil {
 		return nil, err
@@ -329,7 +367,7 @@ func ParseReader[T any](r io.Reader, p Parser[T]) ([]T, error) {
 		return nil, fmt.Errorf("Tokens unbalanced")
 	}
 
-	defs := []T{}
+	builders := []schemaBuilder[T]{}
 
 	idx := 0
 	for idx < len(tokens) {
@@ -346,48 +384,62 @@ func ParseReader[T any](r io.Reader, p Parser[T]) ([]T, error) {
 		log.Print("---- end tokens ----")
 		p.SetTokens(defTokens)
 
-		oc, err := Parse(p)
-		if err != nil {
+		if err = Parse(p); err != nil {
 			return nil, err
 		}
-		defs = append(defs, oc)
+
+		builders = append(builders, p.Builder())
 		idx = end
 	}
 
-	return defs, nil
+	if _, ok := p.Builder().(builderResolver[T]); ok {
+		brs := map[builderResolver[T]]struct{}{}
+		for _, b := range builders {
+			br := b.(builderResolver[T])
+			brs[br] = struct{}{}
+		}
+
+		return resolveDepends(brs)
+	}
+
+	objects := map[schema.OID]T{}
+	for _, b := range builders {
+		o := b.Build()
+		objects[o.Oid()] = o
+	}
+
+	return objects, nil
 }
 
 type ObjectClassParser struct {
 	tokenParser
-	opts []schema.ObjectClassOption
+	attrs map[schema.OID]*schema.Attribute
+	b     *schema.ObjectClassBuilder
 }
 
-func NewObjectClassParser() *ObjectClassParser {
+func NewObjectClassParser(attrs map[schema.OID]*schema.Attribute) *ObjectClassParser {
 	return &ObjectClassParser{
 		tokenParser: tokenParser{
 			tokens: []Token{},
 			idx:    0,
 			state:  UNINITIALISED,
 		},
-		opts: []schema.ObjectClassOption{},
+		attrs: attrs,
+		b:     schema.NewObjectClassBuilder(),
 	}
 }
 
-func (o *ObjectClassParser) SetTokens(t []Token) {
-	o.setTokens(t)
-	o.opts = []schema.ObjectClassOption{}
+func (o *ObjectClassParser) SetTokens(tokens []Token) {
+	o.setTokens(tokens)
+	o.b = schema.NewObjectClassBuilder()
 }
 
-func (o *ObjectClassParser) addOpt(opt schema.ObjectClassOption) {
-	o.opts = append(o.opts, opt)
+func (o *ObjectClassParser) Builder() schemaBuilder[*schema.ObjectClass] {
+	return o.b
 }
 
-func (o *ObjectClassParser) Build() (schema.ObjectClass, error) {
-	return schema.NewObjectClass(o.opts...), nil
-}
-
-func (o *ObjectClassParser) HandleNumericoid(oid dit.OID) error {
-	o.opts = append(o.opts, schema.ObjClassWithOid(oid))
+func (o *ObjectClassParser) HandleNumericoid(oid schema.OID) error {
+	o.b.SetOid(oid)
 	return nil
 }
 
@@ -398,39 +450,52 @@ func (o *ObjectClassParser) HandleKeyword(kw string) error {
 		if err != nil {
 			return err
 		}
-		o.addOpt(schema.ObjClassWithName(names...))
+		o.b.AddName(names...)
 	case "DESC":
 		desc, err := o.parseQdstring()
 		if err != nil {
 			return err
 		}
-		o.addOpt(schema.ObjClassWithDesc(desc))
+		o.b.SetDesc(desc)
 	case "OBSOLETE":
-		o.addOpt(schema.ObjClassWithObsolete())
+		o.b.SetObsolete()
 	case "SUP":
 		oids, err := o.parseOids()
 		if err != nil {
 			return err
 		}
-		o.addOpt(schema.ObjClassWithSupOid(oids...))
+		o.b.AddSupName(oids...)
 	case "ABSTRACT":
-		o.addOpt(schema.ObjClassWithKind(schema.Abstract))
+		o.b.SetKind(schema.Abstract)
 	case "STRUCTURAL":
-		o.addOpt(schema.ObjClassWithKind(schema.Structural))
+		o.b.SetKind(schema.Structural)
 	case "AUXILIARY":
-		o.addOpt(schema.ObjClassWithKind(schema.Auxilary))
+		o.b.SetKind(schema.Auxilary)
 	case "MUST":
 		oids, err := o.parseOids()
 		if err != nil {
 			return err
 		}
-		o.addOpt(schema.ObjClassWithMustAttr(oids...))
+
+		for _, oid := range oids {
+			attr, ok := o.attrs[oid]
+			if !ok {
+				return fmt.Errorf("Unknown attribute id %s", oid)
+			}
+			o.b.AddMustAttr(attr)
+		}
 	case "MAY":
 		oids, err := o.parseOids()
 		if err != nil {
 			return err
 		}
-		o.addOpt(schema.ObjClassWithMayAttr(oids...))
+		for _, oid := range oids {
+			attr, ok := o.attrs[oid]
+			if !ok {
+				return fmt.Errorf("Unknown attribute id %s", oid)
+			}
+			o.b.AddMayAttr(attr)
+		}
 	default:
 		return fmt.Errorf("Unknown Object Class keyword: '%s'", kw)
 	}
@@ -440,7 +505,7 @@ func (o *ObjectClassParser) HandleKeyword(kw string) error {
 
 type AttributeParser struct {
 	tokenParser
-	opts []schema.AttrOption
+	b *schema.AttributeBuilder
 }
 
 func NewAttributeParser() *AttributeParser {
@@ -450,21 +515,8 @@ func NewAttributeParser() *AttributeParser {
 			idx:    0,
 			state:  UNINITIALISED,
 		},
-		opts: []schema.AttrOption{},
+		b: schema.NewAttributeBuilder(),
 	}
-}
-
-func (a *AttributeParser) addOpt(opt schema.AttrOption) {
-	a.opts = append(a.opts, opt)
-}
-
-func (a *AttributeParser) Build() (schema.Attribute, error) {
-	return schema.NewAttribute(a.opts...), nil
-}
-
-func (a *AttributeParser) HandleNumericoid(oid dit.OID) error {
-	a.opts = append(a.opts, schema.AttrWithOid(oid))
-	return nil
 }
 
 func (a *AttributeParser) HandleKeyword(kw string) error {
@@ -474,51 +526,66 @@ func (a *AttributeParser) HandleKeyword(kw string) error {
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithName(names...))
+		a.b.AddNames(names...)
 	case "DESC":
 		desc, err := a.parseQdstring()
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithDesc(desc))
+		a.b.SetDesc(desc)
 	case "OBSOLETE":
-		a.addOpt(schema.AttrWithObsolete())
+		a.b.SetObsolete()
 	case "SUP":
 		sup, err := a.parseOid()
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithOid(sup))
+		a.b.SetSupOid(sup)
 	case "EQUALITY":
 		eq, err := a.parseOid()
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithEqRule(eq))
+
+		rule, ok := schema.GetMatchingRule(eq)
+		if !ok {
+			return fmt.Errorf("Unknown equality rule %s", eq)
+		}
+		a.b.SetEqRule(rule)
 	case "ORDERING":
 		ord, err := a.parseOid()
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithOrdRule(ord))
+
+		rule, ok := schema.GetMatchingRule(ord)
+		if !ok {
+			return fmt.Errorf("Unknown ordering rule %s", ord)
+		}
+		a.b.SetOrdRule(rule)
 	case "SUBSTR":
 		sub, err := a.parseOid()
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithSubstrRule(sub))
+
+		rule, ok := schema.GetMatchingRule(sub)
+		if !ok {
+			return fmt.Errorf("Unknown ordering rule %s", sub)
+		}
+		a.b.SetSubStrRule(rule)
 	case "SYNTAX":
 		syntax, len, err := a.parseNoidlen()
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithSyntax(syntax, len))
+		a.b.SetSyntax(syntax, len)
 	case "SINGLE-VALUE":
-		a.addOpt(schema.AttrWithSingleVal())
+		a.b.SetSingleVal()
 	case "COLLECTIVE":
-		a.addOpt(schema.AttrWithCollective())
+		a.b.SetCollective()
 	case "NO-USER-MODIFICATION":
-		a.addOpt(schema.AttrWithNoUserMod())
+		a.b.SetNoUserMod()
 	case "USAGE":
 		u, err := a.parseDescr()
 		if err != nil {
@@ -528,7 +595,7 @@ func (a *AttributeParser) HandleKeyword(kw string) error {
 		if err != nil {
 			return err
 		}
-		a.addOpt(schema.AttrWithUsage(usage))
+		a.b.SetUsage(usage)
 	default:
 		return fmt.Errorf("Unknown Attribute keyword: '%s'", kw)
 	}

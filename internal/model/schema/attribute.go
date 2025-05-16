@@ -2,8 +2,6 @@ package schema
 
 import (
 	"fmt"
-
-	"github.com/georgib0y/relientldap/internal/model/dit"
 )
 
 type UsageType int
@@ -31,110 +29,138 @@ func NewUsage(usage string) (UsageType, error) {
 }
 
 type Attribute struct {
-	numericoid                       dit.OID
-	names                            map[string]bool
+	numericoid                       OID
+	names                            map[string]struct{}
 	desc                             string
 	obsolete                         bool
-	supOid                           dit.OID
-	eqRule, ordRule, subStrRule      dit.OID
-	syntax                           dit.OID
-	syntaxLen                        int
+	sup                              *Attribute
+	eqRule, ordRule, subStrRule      MatchingRule
+	syntax                           OID
+	syntaxLen                        int // max length the value can contain
 	singleVal, collective, noUserMod bool
 	usage                            UsageType
-	extensions                       string
+	// TODO extensions
+	// extensions                       string
 }
 
-type AttrOption func(*Attribute)
-
-func AttrWithOid(oid dit.OID) AttrOption {
-	return func(a *Attribute) {
-		a.numericoid = oid
-	}
+type AttributeBuilder struct {
+	a      Attribute
+	supOid OID
 }
 
-func AttrWithName(names ...string) AttrOption {
-	return func(a *Attribute) {
-		for _, n := range names {
-			a.names[n] = true
-		}
-	}
-}
-
-func AttrWithDesc(desc string) AttrOption {
-	return func(a *Attribute) {
-		a.desc = desc
+func NewAttributeBuilder() *AttributeBuilder {
+	return &AttributeBuilder{
+		a: Attribute{
+			names:  map[string]struct{}{},
+			eqRule: &UnspecifiedMatchingRule{},
+			// TODO ord and substr rule?
+		},
 	}
 }
 
-func AttrWithObsolete() AttrOption {
-	return func(a *Attribute) {
-		a.obsolete = true
-	}
+func (b *AttributeBuilder) SetOid(numericoid OID) *AttributeBuilder {
+	b.a.numericoid = numericoid
+	return b
 }
 
-func AttrWithSup(oid dit.OID) AttrOption {
-	return func(a *Attribute) {
-		a.supOid = oid
+func (b *AttributeBuilder) AddNames(name ...string) *AttributeBuilder {
+	for _, n := range name {
+		b.a.names[n] = struct{}{}
 	}
+	return b
 }
 
-func AttrWithEqRule(oid dit.OID) AttrOption {
-	return func(a *Attribute) {
-		a.eqRule = oid
-	}
+func (b *AttributeBuilder) SetDesc(desc string) *AttributeBuilder {
+	b.a.desc = desc
+	return b
 }
 
-func AttrWithOrdRule(oid dit.OID) AttrOption {
-	return func(a *Attribute) {
-		a.ordRule = oid
-	}
+func (b *AttributeBuilder) SetObsolete() *AttributeBuilder {
+	b.a.obsolete = true
+	return b
 }
 
-func AttrWithSubstrRule(oid dit.OID) AttrOption {
-	return func(a *Attribute) {
-		a.subStrRule = oid
-	}
+func (b *AttributeBuilder) SetSupOid(supOid OID) *AttributeBuilder {
+	b.supOid = supOid
+	return b
 }
 
-func AttrWithSyntax(oid dit.OID, len int) AttrOption {
-	return func(a *Attribute) {
-		a.syntax = oid
-		a.syntaxLen = len
-	}
+func (b *AttributeBuilder) SetSup(sup *Attribute) *AttributeBuilder {
+	b.a.sup = sup
+	return b
 }
 
-func AttrWithSingleVal() AttrOption {
-	return func(a *Attribute) {
-		a.singleVal = true
-	}
+func (b *AttributeBuilder) SetEqRule(rule MatchingRule) *AttributeBuilder {
+	b.a.eqRule = rule
+	return b
 }
 
-func AttrWithCollective() AttrOption {
-	return func(a *Attribute) {
-		a.collective = true
-	}
+func (b *AttributeBuilder) SetOrdRule(rule MatchingRule) *AttributeBuilder {
+	b.a.ordRule = rule
+	return b
 }
 
-func AttrWithNoUserMod() AttrOption {
-	return func(a *Attribute) {
-		a.noUserMod = true
-	}
+func (b *AttributeBuilder) SetSubStrRule(rule MatchingRule) *AttributeBuilder {
+	b.a.subStrRule = rule
+	return b
 }
 
-func AttrWithUsage(usage UsageType) AttrOption {
-	return func(a *Attribute) {
-		a.usage = usage
-	}
+func (b *AttributeBuilder) SetSyntax(syntax OID, len int) *AttributeBuilder {
+	b.a.syntax = syntax
+	b.a.syntaxLen = len
+	return b
 }
 
-func NewAttribute(opts ...AttrOption) Attribute {
-	a := Attribute{
-		names: map[string]bool{},
-	}
+func (b *AttributeBuilder) SetSyntaxLength(len int) *AttributeBuilder {
+	b.a.syntaxLen = len
+	return b
+}
 
-	for _, opt := range opts {
-		opt(&a)
-	}
+func (b *AttributeBuilder) SetSingleVal() *AttributeBuilder {
+	b.a.singleVal = true
+	return b
+}
 
-	return a
+func (b *AttributeBuilder) SetCollective() *AttributeBuilder {
+	b.a.collective = true
+	return b
+}
+
+func (b *AttributeBuilder) SetNoUserMod() *AttributeBuilder {
+	b.a.noUserMod = true
+	return b
+}
+
+func (b *AttributeBuilder) SetUsage(usage UsageType) *AttributeBuilder {
+	b.a.usage = usage
+	return b
+}
+
+func (b *AttributeBuilder) Resolve(attrs map[OID]*Attribute) error {
+	attr, ok := attrs[b.supOid]
+	if !ok {
+		return fmt.Errorf("Unknown attribute oid %s", b.supOid)
+	}
+	b.SetSup(attr)
+	return nil
+}
+
+func (b *AttributeBuilder) Build() *Attribute {
+	return &b.a
+}
+
+func (a *Attribute) Oid() OID {
+	return a.numericoid
+}
+
+// func (a *Attribute) Name() string {
+// 	return b.
+// }
+
+func (a *Attribute) EqRule() MatchingRule {
+	return a.eqRule
+}
+
+func (a *Attribute) SingleVal() bool {
+	return a.singleVal
 }

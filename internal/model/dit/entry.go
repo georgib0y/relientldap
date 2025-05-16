@@ -1,15 +1,24 @@
 package dit
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/georgib0y/relientldap/internal/model/schema"
+	"github.com/georgib0y/relientldap/internal/util"
+)
+
+type (
+	ObjClassMap map[*schema.ObjectClass]struct{}
+	AttrMap     map[*schema.Attribute]map[string]struct{}
 )
 
 type Entry struct {
 	dn         DN
-	objClasses map[OID]bool
-	attrs      map[OID]map[string]bool
+	objClasses ObjClassMap
+	attrs      AttrMap
 }
 
 // TODO better validation when creating entrys - ie must have at least one object class
@@ -22,126 +31,166 @@ func WithDN(dn DN) EntryOption {
 	}
 }
 
-func WithObjClass(oid ...OID) EntryOption {
+func WithObjClass(oc ...*schema.ObjectClass) EntryOption {
 	return func(e *Entry) {
-		for _, o := range oid {
-			e.objClasses[o] = true
+		for _, o := range oc {
+			e.objClasses[o] = struct{}{}
 		}
 	}
 }
 
-func WithEntryAttr(ava ...AVA) EntryOption {
+func WithEntryAttr(attr *schema.Attribute, val ...string) EntryOption {
 	return func(e *Entry) {
-		e.AddAttr(ava...)
+		e.AddAttr(attr, val...)
 	}
 }
 
 // TODO do i require dn when entry is made?
-func NewEntry(options ...EntryOption) Entry {
-	e := Entry{
-		attrs: map[OID]map[string]bool{},
+func NewEntry(options ...EntryOption) *Entry {
+	e := &Entry{
+		objClasses: ObjClassMap{},
+		attrs:      AttrMap{},
 	}
 
 	for _, o := range options {
-		o(&e)
+		o(e)
 	}
 
 	return e
 }
 
-func (e Entry) Clone() Entry {
-	attrs := map[OID]map[string]bool{}
-
-	for o, attr := range e.attrs {
-		vals := map[string]bool{}
-		for a := range attr {
-			vals[a] = true
-		}
-		attrs[o] = vals
-	}
-
-	return Entry{
-		dn:    e.dn.Clone(),
-		attrs: attrs,
+func (e *Entry) Clone() *Entry {
+	return &Entry{
+		dn:         e.dn.Clone(),
+		objClasses: util.CloneMap(e.objClasses),
+		attrs:      util.CloneMapNested(e.attrs),
 	}
 }
 
-func (e *Entry) AddAttr(ava ...AVA) {
-	for _, a := range ava {
-		attr, ok := e.attrs[a.Oid]
+// Assumes that the caller knows what their doing, and that they won't
+// violate any DIT rules e.g. singleval. Required by Modify Operation,
+// which allows for the entry to be temporarlily invalid
+func (e *Entry) AddAttr(attr *schema.Attribute, val ...string) {
+	for _, v := range val {
+		aVals, ok := e.attrs[attr]
 		if !ok {
-			attr = map[string]bool{}
+			aVals = map[string]struct{}{}
 		}
 
-		attr[a.Val] = true
-		e.attrs[a.Oid] = attr
+		aVals[v] = struct{}{}
+		e.attrs[attr] = aVals
 	}
 }
 
-func (e Entry) ContainsAttr(ava AVA) bool {
-	attr, ok := e.attrs[ava.Oid]
-	if !ok {
-		return false
+func (e *Entry) AddAttrSafe(attr *schema.Attribute, val ...string) error {
+	if !attr.SingleVal() {
+		e.AddAttr(attr, val...)
+		return nil
 	}
 
-	_, ok = attr[ava.Val]
-	return ok
+	if len(val) != 1 {
+		return fmt.Errorf("trying to add %d attributes to single val attr %s", len(val), attr.Oid())
+	}
+	e.attrs[attr] = map[string]struct{}{val[0]: {}}
+	return nil
+}
+
+func (e *Entry) ContainsAttrVal(attr *schema.Attribute, val string) (bool, error) {
+	a, ok := e.attrs[attr]
+	if !ok {
+		return false, nil
+	}
+
+	matched := false
+	var undefined error
+	for v := range a {
+		m, err := attr.EqRule().Match(val, v)
+		if err != nil {
+			if errors.Is(err, schema.UndefinedMatchingError) {
+				undefined = err
+			} else {
+				return false, err
+			}
+		}
+
+		if m {
+			matched = true
+		}
+	}
+
+	return matched, undefined
 }
 
 // Returns true if the ava was deleted or false if it could not be found
-func (e *Entry) RemoveAttr(ava AVA) bool {
-	attr, ok := e.attrs[ava.Oid]
+func (e *Entry) RemoveAttrVal(attr *schema.Attribute, val string) error {
+	a, ok := e.attrs[attr]
 	if !ok {
-		return false
+		return fmt.Errorf("could not find attr %s to remove", attr.Oid())
 	}
 
-	if _, ok := attr[ava.Val]; !ok {
-		return false
+	if _, ok := a[val]; !ok {
+		return fmt.Errorf("could not find value %s to remove", val)
 	}
 
-	delete(attr, ava.Val)
+	delete(a, val)
 
-	if len(attr) == 0 {
-		delete(e.attrs, ava.Oid)
+	if len(a) == 0 {
+		delete(e.attrs, attr)
 	}
 
-	return true
+	return nil
 }
 
-// TODO better name?
-func (e *Entry) RemoveAllAttr(oid OID) bool {
+func (e *Entry) RemoveAttrVals(attr *schema.Attribute) bool {
 	log.Print(e.attrs)
-	if _, ok := e.attrs[oid]; !ok {
+	if _, ok := e.attrs[attr]; !ok {
 		return false
 	}
-	delete(e.attrs, oid)
+	delete(e.attrs, attr)
 	return true
 }
 
-func (e Entry) SetRDN(rdn RDN, deleteOld bool) {
+func (e *Entry) SetRDN(rdn RDN, deleteOld bool) error {
 	currRdn := e.dn.GetRDN()
 
 	// do nothing if the rdns are the same
-	if CompareRDNs(currRdn, rdn) {
-		return
+	if CompareRDNs(currRdn, &rdn) {
+		return nil
 	}
 
-	e.dn.ReplaceRDN(rdn)
+	// add any new attributes from the rdn into entry
+	for a, v := range rdn.avas {
+		contains, err := e.ContainsAttrVal(a, v)
+		if err != nil {
+			return err
+		}
 
-	if !deleteOld {
-		return
-	}
+		if contains {
+			continue
+		}
 
-	for ava := range currRdn.avas {
-		if !e.RemoveAttr(ava) {
-			log.Printf("trying to delete ava: %s, from current rdn but doesnt exist!!", ava)
+		if err = e.AddAttrSafe(a, v); err != nil {
+			return err
 		}
 	}
+
+	if deleteOld {
+		for attr, val := range currRdn.avas {
+			if err := e.RemoveAttrVal(attr, val); err != nil {
+				return err
+			}
+		}
+	}
+
+	*currRdn = rdn
+	return nil
 }
 
-func (e Entry) MatchesRdn(rdn RDN) bool {
-	for ava := range rdn.avas {
-		if !e.ContainsAttr(ava) {
+func (e *Entry) MatchesRdn(rdn RDN) bool {
+	for attr, val := range rdn.avas {
+		contains, err := e.ContainsAttrVal(attr, val)
+
+		if !contains || err != nil {
 			return false
 		}
 	}
@@ -151,41 +200,41 @@ func (e Entry) MatchesRdn(rdn RDN) bool {
 
 type ChangeOperation func(*Entry) error
 
-func AddOperation(oid OID, vals ...string) ChangeOperation {
+func AddOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		for _, val := range vals {
-			e.AddAttr(AVA{oid, val})
+			e.AddAttr(attr, val)
 		}
 
 		return nil
 	}
 }
 
-func DeleteOperation(oid OID, vals ...string) ChangeOperation {
+func DeleteOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		if len(vals) == 0 {
-			e.RemoveAllAttr(oid)
+			e.RemoveAttrVals(attr)
 			return nil
 		}
 
 		for _, val := range vals {
-			e.RemoveAttr(AVA{oid, val})
+			e.RemoveAttrVal(attr, val)
 		}
 
 		return nil
 	}
 }
 
-func ReplaceOperation(oid OID, vals ...string) ChangeOperation {
+func ReplaceOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		// do nothing if the attribue does not exist
-		if !e.RemoveAllAttr(oid) {
-			log.Printf("replace attr does not exist: \"%s\"", oid)
+		if !e.RemoveAttrVals(attr) {
+			log.Printf("replace attr does not exist: \"%s\"", attr.Oid())
 			return nil
 		}
 
 		for _, val := range vals {
-			e.AddAttr(AVA{oid, val})
+			e.AddAttr(attr, val)
 		}
 
 		return nil
@@ -197,7 +246,7 @@ func (e Entry) String() string {
 
 	sb.WriteString("Entry: \n")
 	for attr, vals := range e.attrs {
-		sb.WriteString(fmt.Sprintf("\tAttr: %s\n", attr))
+		sb.WriteString(fmt.Sprintf("\tAttr: %s\n", attr.Oid()))
 		for val := range vals {
 			sb.WriteString(fmt.Sprintf("\t\t%s\n", val))
 		}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/georgib0y/relientldap/internal/model/dit"
+	"github.com/georgib0y/relientldap/internal/util"
 )
 
 type ObjectClassKind int
@@ -29,89 +29,119 @@ func (k ObjectClassKind) String() string {
 }
 
 type ObjectClass struct {
-	numericoid          dit.OID
-	names               map[string]bool
+	numericoid          OID
+	names               map[string]struct{}
 	desc                string
 	obsolete            bool
-	supOids             map[dit.OID]bool
+	sups                map[OID]*ObjectClass
 	kind                ObjectClassKind
-	mustAttrs, mayAttrs map[dit.OID]bool
+	mustAttrs, mayAttrs map[OID]*Attribute
 }
 
-type ObjectClassOption func(*ObjectClass)
+type ObjectClassBuilder struct {
+	o        ObjectClass
+	supNames map[string]struct{} // sup names is either a given name or oid for a sup object class
+}
 
-func ObjClassWithOid(oid dit.OID) ObjectClassOption {
-	return func(oc *ObjectClass) {
-		oc.numericoid = oid
+func NewObjectClassBuilder() *ObjectClassBuilder {
+	return &ObjectClassBuilder{
+		o: ObjectClass{
+			names:     map[string]struct{}{},
+			sups:      map[OID]*ObjectClass{},
+			mustAttrs: map[OID]*Attribute{},
+			mayAttrs:  map[OID]*Attribute{},
+		},
+		supNames: map[string]struct{}{},
 	}
 }
 
-func ObjClassWithName(names ...string) ObjectClassOption {
-	return func(oc *ObjectClass) {
-		for _, n := range names {
-			oc.names[n] = true
+func (b *ObjectClassBuilder) SetOid(numericoid OID) *ObjectClassBuilder {
+	b.o.numericoid = numericoid
+	return b
+}
+
+func (b *ObjectClassBuilder) AddName(name ...string) *ObjectClassBuilder {
+	for _, n := range name {
+		b.o.names[n] = struct{}{}
+	}
+	return b
+}
+
+func (b *ObjectClassBuilder) SetDesc(desc string) *ObjectClassBuilder {
+	b.o.desc = desc
+	return b
+}
+
+func (b *ObjectClassBuilder) SetObsolete() *ObjectClassBuilder {
+	b.o.obsolete = true
+	return b
+}
+
+// TODO oid <> string not beautiful
+func (b *ObjectClassBuilder) AddSupName(name ...OID) *ObjectClassBuilder {
+	for _, n := range name {
+		b.supNames[string(n)] = struct{}{}
+	}
+	return b
+}
+
+func (b *ObjectClassBuilder) AddSup(sup ...*ObjectClass) *ObjectClassBuilder {
+	for _, s := range sup {
+		b.o.sups[s.numericoid] = s
+	}
+	return b
+}
+
+func (b *ObjectClassBuilder) SetKind(kind ObjectClassKind) *ObjectClassBuilder {
+	b.o.kind = kind
+	return b
+}
+
+func (b *ObjectClassBuilder) AddMustAttr(attr ...*Attribute) *ObjectClassBuilder {
+	for _, a := range attr {
+		b.o.mustAttrs[a.numericoid] = a
+	}
+	return b
+}
+
+func (b *ObjectClassBuilder) AddMayAttr(attr ...*Attribute) *ObjectClassBuilder {
+	for _, a := range attr {
+		b.o.mustAttrs[a.numericoid] = a
+	}
+	return b
+}
+
+func (b *ObjectClassBuilder) Resolve(objClasses map[OID]*ObjectClass) error {
+outter:
+	for name := range b.supNames {
+		sup, ok := objClasses[OID(name)]
+		if ok {
+			b.AddSup(sup)
+			continue
 		}
-	}
-}
 
-func ObjClassWithDesc(desc string) ObjectClassOption {
-	return func(oc *ObjectClass) {
-		oc.desc = desc
-	}
-}
-
-func ObjClassWithObsolete() ObjectClassOption {
-	return func(oc *ObjectClass) {
-		oc.obsolete = true
-	}
-}
-
-func ObjClassWithSupOid(sup ...dit.OID) ObjectClassOption {
-	return func(oc *ObjectClass) {
-		for _, s := range sup {
-			oc.supOids[s] = true
+		for _, objClass := range objClasses {
+			if _, ok = objClass.names[name]; ok {
+				b.AddSup(objClass)
+				continue outter
+			}
 		}
+
+		return fmt.Errorf("Could not find sup object class %s", name)
 	}
+
+	return nil
 }
 
-func ObjClassWithKind(kind ObjectClassKind) ObjectClassOption {
-	return func(oc *ObjectClass) {
-		oc.kind = kind
-	}
+func (b *ObjectClassBuilder) Build() *ObjectClass {
+	return &b.o
 }
 
-func ObjClassWithMustAttr(attr ...dit.OID) ObjectClassOption {
-	return func(oc *ObjectClass) {
-		for _, a := range attr {
-			oc.mustAttrs[a] = true
-		}
-	}
+func (o *ObjectClass) Oid() OID {
+	return o.numericoid
 }
 
-func ObjClassWithMayAttr(attr ...dit.OID) ObjectClassOption {
-	return func(oc *ObjectClass) {
-		for _, a := range attr {
-			oc.mayAttrs[a] = true
-		}
-	}
-}
-
-func NewObjectClass(options ...ObjectClassOption) ObjectClass {
-	oc := ObjectClass{
-		names:     map[string]bool{},
-		supOids:   map[dit.OID]bool{},
-		mustAttrs: map[dit.OID]bool{},
-		mayAttrs:  map[dit.OID]bool{},
-	}
-
-	for _, o := range options {
-		o(&oc)
-	}
-
-	return oc
-}
-
-func (o ObjectClass) String() string {
+func (o *ObjectClass) String() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Numericoid: %s\n", string(o.numericoid))
 	sb.WriteString("Names:")
@@ -121,56 +151,41 @@ func (o ObjectClass) String() string {
 	fmt.Fprintf(&sb, "\nDesc: %s\n", o.desc)
 	fmt.Fprintf(&sb, "Obsolete: %t\n", o.obsolete)
 	sb.WriteString("Sup Oids:")
-	for s := range o.supOids {
-		sb.WriteString(" " + string(s))
+	for oid := range o.sups {
+		sb.WriteString(" " + string(oid))
 	}
 	fmt.Fprintf(&sb, "\nKind: %s\n", o.kind)
 
 	sb.WriteString("Must:")
-	for a := range o.mustAttrs {
-		sb.WriteString(" " + string(a))
+	for oid := range o.mustAttrs {
+		sb.WriteString(" " + string(oid))
 	}
 
 	sb.WriteString("\nMay:")
-	for a := range o.mayAttrs {
-		sb.WriteString(" " + string(a))
+	for oid := range o.mayAttrs {
+		sb.WriteString(" " + string(oid))
 	}
 
 	return sb.String()
 }
 
-// TODO move this somewhere more useful
-func mapSetsEq[K comparable](m1, m2 map[K]bool) bool {
-	if len(m1) != len(m2) {
-		return false
-	}
-
-	for k := range m1 {
-		if _, ok := m2[k]; !ok {
-			return false
-		}
-	}
-
-	return true
-}
-
-func ObjectClassesAreEqual(o1, o2 ObjectClass) error {
+func ObjectClassesAreEqual(o1, o2 *ObjectClass) error {
 	switch {
 	case o1.numericoid != o2.numericoid:
 		return fmt.Errorf("numericoids dont match")
-	case !mapSetsEq(o1.names, o2.names):
+	case !util.CmpMapKeys(o1.names, o2.names):
 		return fmt.Errorf("names dont match")
 	case o1.desc != o2.desc:
 		return fmt.Errorf("descs dont match")
 	case o1.obsolete != o2.obsolete:
 		return fmt.Errorf("obsoletes dont match")
-	case !mapSetsEq(o1.supOids, o2.supOids):
+	case !util.CmpMapKeys(o1.sups, o2.sups):
 		return fmt.Errorf("supoids dont match")
 	case o1.kind != o2.kind:
 		return fmt.Errorf("kinds dont match")
-	case !mapSetsEq(o1.mustAttrs, o2.mustAttrs):
+	case !util.CmpMapKeys(o1.mustAttrs, o2.mustAttrs):
 		return fmt.Errorf("musts dont match")
-	case !mapSetsEq(o1.mayAttrs, o2.mayAttrs):
+	case !util.CmpMapKeys(o1.mayAttrs, o2.mayAttrs):
 		return fmt.Errorf("mays dont match")
 	default:
 		return nil

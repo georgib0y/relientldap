@@ -1,37 +1,40 @@
 package dit
 
-import "strings"
+import (
+	"strings"
 
-type AttrList map[OID]map[string]bool
-
-type (
-	ID  uint64
-	OID string
+	"github.com/georgib0y/relientldap/internal/model/schema"
 )
 
-type AVA struct {
-	Oid OID
-	Val string
-}
+type AttrList map[schema.OID]map[string]bool
 
-func (a AVA) String() string {
-	return string(a.Oid) + "=" + a.Val
-}
+type (
+	ID uint64
+)
+
+// type AVA struct {
+// 	attr *schema.Attribute
+// 	Val  string
+// }
+
+// func (a AVA) String() string {
+// 	return string(a.attr.Oid()) + "=" + a.Val
+// }
 
 type RDNOption func(*RDN)
 
-func WithAVA(oid OID, val string) RDNOption {
+func WithAVA(attr *schema.Attribute, val string) RDNOption {
 	return func(r *RDN) {
-		r.AddAVA(AVA{oid, val})
+		r.avas[attr] = val
 	}
 }
 
 type RDN struct {
-	avas map[AVA]bool
+	avas map[*schema.Attribute]string
 }
 
 func NewRDN(options ...RDNOption) RDN {
-	r := RDN{map[AVA]bool{}}
+	r := RDN{map[*schema.Attribute]string{}}
 
 	for _, o := range options {
 		o(&r)
@@ -41,26 +44,26 @@ func NewRDN(options ...RDNOption) RDN {
 }
 
 func (r RDN) Clone() RDN {
-	avas := map[AVA]bool{}
-	for a := range r.avas {
-		avas[a] = true
+	avas := map[*schema.Attribute]string{}
+	for o, a := range r.avas {
+		avas[o] = a
 	}
 
 	return RDN{avas}
 }
 
-func (r *RDN) AddAVA(ava AVA) {
-	r.avas[ava] = true
-}
-
-// TODO better name?
-func CompareRDNs(r1, r2 RDN) bool {
+func CompareRDNs(r1, r2 *RDN) bool {
 	if len(r1.avas) != len(r2.avas) {
 		return false
 	}
 
-	for ava := range r1.avas {
-		if _, ok := r2.avas[ava]; !ok {
+	for attr, val1 := range r1.avas {
+		val2, ok := r2.avas[attr]
+		if !ok {
+			return false
+		}
+
+		if ok, err := attr.EqRule().Match(val1, val2); !ok || err != nil {
 			return false
 		}
 	}
@@ -70,8 +73,9 @@ func CompareRDNs(r1, r2 RDN) bool {
 
 func (r RDN) String() string {
 	avas := []string{}
-	for ava := range r.avas {
-		avas = append(avas, ava.String())
+	for attr, val := range r.avas {
+		ava := string(attr.Oid()) + "=" + val
+		avas = append(avas, ava)
 	}
 
 	return strings.Join(avas, "+")
@@ -88,32 +92,29 @@ type DN struct {
 	rdns []RDN
 }
 
-type DNOption func(*DN)
-
-func WithRdnAppended(rdn RDN) DNOption {
-	return func(dn *DN) {
-		dn.rdns = append(dn.rdns, rdn)
-	}
+type DnBuilder struct {
+	dn DN
 }
 
-func WithRDN(rdn RDN) DNOption {
-	return func(dn *DN) {
-		dn.rdns = append([]RDN{rdn}, dn.rdns...)
-	}
+func NewDnBuilder() *DnBuilder {
+	return &DnBuilder{dn: DN{rdns: []RDN{}}}
 }
 
-func WithRdnAva(oid OID, val string) DNOption {
-	return WithRDN(NewRDN(WithAVA(oid, val)))
+// TODO does the of context strings make sense?
+func (b *DnBuilder) AddNamingContext(dcAttr *schema.Attribute, context ...string) *DnBuilder {
+	for _, dc := range context {
+		b.dn.rdns = append(b.dn.rdns, NewRDN(WithAVA(dcAttr, dc)))
+	}
+	return b
 }
 
-func NewDN(options ...DNOption) DN {
-	dn := DN{}
+func (b *DnBuilder) AddAvaAsRdn(attr *schema.Attribute, val string) *DnBuilder {
+	b.dn.rdns = append(b.dn.rdns, NewRDN(WithAVA(attr, val)))
+	return b
+}
 
-	for _, o := range options {
-		o(&dn)
-	}
-
-	return dn
+func (b *DnBuilder) Build() DN {
+	return b.dn
 }
 
 func (dn DN) Clone() DN {
@@ -131,7 +132,7 @@ func CompareDNs(dn1, dn2 DN) bool {
 	}
 
 	for i := range dn1.rdns {
-		if !CompareRDNs(dn1.rdns[i], dn2.rdns[2]) {
+		if !CompareRDNs(&dn1.rdns[i], &dn2.rdns[i]) {
 			return false
 		}
 	}
@@ -151,8 +152,8 @@ func (dn *DN) ReplaceRDN(rdn RDN) {
 
 // Returns the deepest rdn
 // TODO not sure this func is obvious enough
-func (dn DN) GetRDN() RDN {
-	return dn.rdns[len(dn.rdns)-1]
+func (dn *DN) GetRDN() *RDN {
+	return &dn.rdns[len(dn.rdns)-1]
 }
 
 func (dn DN) GetParentDN() DN {
