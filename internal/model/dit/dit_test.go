@@ -48,6 +48,7 @@ Test DIT Structue
 ----| cn=Test1
 ----| ou=TestOu
 ------| cn=Test2
+------| cn=Test3
 */
 
 func generateTestDIT() DIT {
@@ -75,17 +76,32 @@ func generateTestDIT() DIT {
 		WithDN(cnTest1Dn),
 		WithEntryAttr(attrs["cn"], "Test1"),
 		WithEntryAttr(attrs["sn"], "One"),
-		WithEntryAttr(attrs["sn"], "One-Two"),
+		WithEntryAttr(attrs["sn"], "Tester"),
 	))
 
 	cnTest2Dn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
 		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test2").
 		Build()
-	cnTest2 := NewDITNode(ouTestOu, NewEntry(WithDN(cnTest2Dn), WithEntryAttr(attrs["cn"], "Test2")))
+	cnTest2 := NewDITNode(ouTestOu, NewEntry(
+		WithDN(cnTest2Dn),
+		WithEntryAttr(attrs["cn"], "Test2"),
+		WithEntryAttr(attrs["sn"], "Tester"),
+	))
+
+	cnTest3Dn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test3").
+		Build()
+	cnTest3 := NewDITNode(ouTestOu, NewEntry(
+		WithDN(cnTest3Dn),
+		WithEntryAttr(attrs["cn"], "Test3"),
+		WithEntryAttr(attrs["sn"], "Tester"),
+	))
 
 	// add each child entry to their parent node
 	ouTestOu.children[cnTest2] = struct{}{}
+	ouTestOu.children[cnTest3] = struct{}{}
 	dcGeorgiboy.children[cnTest1] = struct{}{}
 	dcGeorgiboy.children[ouTestOu] = struct{}{}
 	dcDev.children[dcGeorgiboy] = struct{}{}
@@ -376,4 +392,111 @@ func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
 	}
 
 	entry.ContainsAttrVal(attrs["givenName"], "Test1Moved")
+}
+
+func TestSearchBaseObject(t *testing.T) {
+	dit := generateTestDIT()
+
+	baseDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["cn"], "Test1").
+		Build()
+
+	entry, err := dit.GetEntry(baseDn)
+	if err != nil {
+		t.Fatalf("failed to get entry: %s", err)
+	}
+
+	matchingFilter := NewEqualityFilter(attrs["cn"], "Test1")
+	res, err := dit.Search(baseDn, BaseObject, matchingFilter)
+	if err != nil {
+		t.Fatalf("error in base object search: %s", err)
+	}
+
+	if len(res) != 1 {
+		for _, r := range res {
+			t.Log(r)
+		}
+		t.Fatalf("base object search expected 1 entry but got %d", len(res))
+	}
+
+	if res[0] != entry {
+		t.Fatalf("search returned wrong entry")
+	}
+
+	nonMatchingFilter := NewEqualityFilter(attrs["cn"], "unknown")
+	res, err = dit.Search(baseDn, BaseObject, nonMatchingFilter)
+	if err != nil {
+		t.Fatalf("error in base object search: %s", err)
+	}
+	if len(res) > 0 {
+		t.Fatalf("expected no results, got %d", len(res))
+	}
+}
+
+func TestSearchSingleLevel(t *testing.T) {
+	dit := generateTestDIT()
+
+	baseDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").
+		Build()
+
+	filter := NewEqualityFilter(attrs["cn"], "Test2")
+	res, err := dit.Search(baseDn, SingleLevel, filter)
+	if err != nil {
+		t.Fatalf("error in single level search: %s", err)
+	}
+
+	if len(res) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(res))
+	}
+
+	if !res[0].MatchesRdn(NewRDN(WithAVA(attrs["cn"], "Test2"))) {
+		t.Log(res[0])
+		t.Fatal("expected {cn:Test2} to be rdn for result")
+	}
+
+	filter = NewEqualityFilter(attrs["sn"], "Tester")
+	res, err = dit.Search(baseDn, SingleLevel, filter)
+	if err != nil {
+		t.Fatalf("error in single level search: %s", err)
+	}
+
+	if len(res) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(res))
+	}
+}
+
+func TestSearchWholeSubtree(t *testing.T) {
+	dit := generateTestDIT()
+
+	baseDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		Build()
+
+	filter := NewEqualityFilter(attrs["cn"], "Test2")
+	res, err := dit.Search(baseDn, WholeSubtree, filter)
+	if err != nil {
+		t.Fatalf("error in whole subtree search: %s", err)
+	}
+
+	if len(res) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(res))
+	}
+
+	if !res[0].MatchesRdn(NewRDN(WithAVA(attrs["cn"], "Test2"))) {
+		t.Log(res[0])
+		t.Fatal("expected {cn:Test2} to be rdn for only result")
+	}
+
+	filter = NewEqualityFilter(attrs["sn"], "Tester")
+	res, err = dit.Search(baseDn, WholeSubtree, filter)
+	if err != nil {
+		t.Fatalf("error in whole subtree search: %s", err)
+	}
+
+	if len(res) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(res))
+	}
 }

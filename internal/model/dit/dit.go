@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/georgib0y/relientldap/internal/model/schema"
 )
@@ -194,12 +195,12 @@ type WalkTreeFunc func(*Entry)
 
 func WalkTree(n *DITNode, fn WalkTreeFunc) {
 	fn(n.entry)
-	for _ = range n.children {
-		WalkTree(n, fn)
+	for c := range n.children {
+		WalkTree(c, fn)
 	}
 }
 
-func WriteTreeUnderNode(w io.Writer, node *DITNode) {
+func WriteNodeDescendants(w io.Writer, node *DITNode) {
 	w.Write([]byte("\n"))
 	writeNodeRec(w, node, 0)
 }
