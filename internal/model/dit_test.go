@@ -1,12 +1,10 @@
-package dit
+package model
 
 import (
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/georgib0y/relientldap/internal/model/schema"
 )
 
 const attrLdif string = `
@@ -30,87 +28,26 @@ const attrLdif string = `
       ( 2.5.4.4 NAME 'sn'
          SUP name )
 
+	  ( 2.5.4.23 NAME 'facsimileTelephoneNumber'
+         SYNTAX 1.3.6.1.4.1.1466.115.121.1.22 )
+
+      ( 2.5.4.42 NAME 'givenName'
+         SUP name )
 `
 
-var attrs map[string]*schema.Attribute = map[string]*schema.Attribute{
-	"dc":        schema.NewAttributeBuilder().SetOid("dc").Build(),
-	"ou":        schema.NewAttributeBuilder().SetOid("ou").Build(),
-	"cn":        schema.NewAttributeBuilder().SetOid("cn").Build(),
-	"sn":        schema.NewAttributeBuilder().SetOid("sn").Build(),
-	"fax":       schema.NewAttributeBuilder().SetOid("fax").Build(),
-	"givenName": schema.NewAttributeBuilder().SetOid("givenName").Build(),
+var attrs = map[OID]*Attribute{
+	"dc":                       NewAttributeBuilder().SetOid("dc").AddNames("dc").Build(),
+	"ou":                       NewAttributeBuilder().SetOid("ou").AddNames("ou").Build(),
+	"cn":                       NewAttributeBuilder().SetOid("cn").AddNames("cn").Build(),
+	"sn":                       NewAttributeBuilder().SetOid("sn").AddNames("sn").Build(),
+	"facsimileTelephoneNumber": NewAttributeBuilder().SetOid("facsimileTelephoneNumber").Build(),
+	"givenName":                NewAttributeBuilder().SetOid("givenName").Build(),
 }
 
-/*
-Test DIT Structue
-| dc=dev
---| dc=georgiboy
-----| cn=Test1
-----| ou=TestOu
-------| cn=Test2
-------| cn=Test3
-*/
-
-func generateTestDIT() DIT {
-	dcDevDn := NewDnBuilder().
-		AddNamingContext(attrs["dc"], "dev").
-		Build()
-	dcDev := NewDITNode(nil, NewEntry(WithDN(dcDevDn), WithEntryAttr(attrs["dc"], "dev")))
-
-	dcGeorgiboyDn := NewDnBuilder().
-		AddNamingContext(attrs["dc"], "dev", "georgiboy").
-		Build()
-	dcGeorgiboy := NewDITNode(dcDev, NewEntry(WithDN(dcGeorgiboyDn), WithEntryAttr(attrs["dc"], "georgiboy")))
-
-	ouTestOuDn := NewDnBuilder().
-		AddNamingContext(attrs["dc"], "dev", "georgiboy").
-		AddAvaAsRdn(attrs["ou"], "TestOu").
-		Build()
-	ouTestOu := NewDITNode(dcGeorgiboy, NewEntry(WithDN(ouTestOuDn), WithEntryAttr(attrs["ou"], "TestOu")))
-
-	cnTest1Dn := NewDnBuilder().
-		AddNamingContext(attrs["dc"], "dev", "georgiboy").
-		AddAvaAsRdn(attrs["cn"], "Test1").
-		Build()
-	cnTest1 := NewDITNode(dcGeorgiboy, NewEntry(
-		WithDN(cnTest1Dn),
-		WithEntryAttr(attrs["cn"], "Test1"),
-		WithEntryAttr(attrs["sn"], "One"),
-		WithEntryAttr(attrs["sn"], "Tester"),
-	))
-
-	cnTest2Dn := NewDnBuilder().
-		AddNamingContext(attrs["dc"], "dev", "georgiboy").
-		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test2").
-		Build()
-	cnTest2 := NewDITNode(ouTestOu, NewEntry(
-		WithDN(cnTest2Dn),
-		WithEntryAttr(attrs["cn"], "Test2"),
-		WithEntryAttr(attrs["sn"], "Tester"),
-	))
-
-	cnTest3Dn := NewDnBuilder().
-		AddNamingContext(attrs["dc"], "dev", "georgiboy").
-		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test3").
-		Build()
-	cnTest3 := NewDITNode(ouTestOu, NewEntry(
-		WithDN(cnTest3Dn),
-		WithEntryAttr(attrs["cn"], "Test3"),
-		WithEntryAttr(attrs["sn"], "Tester"),
-	))
-
-	// add each child entry to their parent node
-	ouTestOu.children[cnTest2] = struct{}{}
-	ouTestOu.children[cnTest3] = struct{}{}
-	dcGeorgiboy.children[cnTest1] = struct{}{}
-	dcGeorgiboy.children[ouTestOu] = struct{}{}
-	dcDev.children[dcGeorgiboy] = struct{}{}
-
-	return DIT{dcDev}
-}
+var schema = Schema{attrs, nil}
 
 func TestGetEntryFindsByDn(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if _, err := dit.GetEntry(dn); err != nil {
@@ -119,7 +56,7 @@ func TestGetEntryFindsByDn(t *testing.T) {
 }
 
 func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Nonexistent").Build()
 
 	expectedMatchedDn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").Build()
@@ -145,7 +82,7 @@ func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 }
 
 func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "New Object").Build()
 
 	entry := NewEntry(
@@ -165,7 +102,7 @@ func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 	}
 
 	expAttrs := []struct {
-		attr *schema.Attribute
+		attr *Attribute
 		val  string
 	}{
 		{attrs["givenName"], "New"},
@@ -188,7 +125,7 @@ func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 }
 
 func TestDeleteEntryDeletesNode(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.DeleteEntry(dn); err != nil {
@@ -206,7 +143,7 @@ func TestDeleteEntryDeletesNode(t *testing.T) {
 }
 
 func TestDeleteEntryFailsOnNonLeafNode(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["ou"], "TestOu").Build()
 
 	err := dit.DeleteEntry(dn)
@@ -217,14 +154,14 @@ func TestDeleteEntryFailsOnNonLeafNode(t *testing.T) {
 }
 
 func TestModifyAddEntryAddsAttributes(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
-	if err := dit.ModifyEntry(dn, AddOperation(attrs["fax"], "12345")); err != nil {
+	if err := dit.ModifyEntry(dn, AddOperation(attrs["facsimileTelephoneNumber"], "12345")); err != nil {
 		t.Fatal("Got error when adding entry: ", err)
 	}
 
-	ok, err := dit.ContainsAttribute(dn, attrs["fax"], "12345")
+	ok, err := dit.ContainsAttribute(dn, attrs["facsimileTelephoneNumber"], "12345")
 	if err != nil {
 		t.Fatal("Error when comparing attr: ", err)
 	}
@@ -235,7 +172,7 @@ func TestModifyAddEntryAddsAttributes(t *testing.T) {
 }
 
 func TestModifyDeleteSingleEntryDeletesAttribute(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.ModifyEntry(dn, DeleteOperation(attrs["sn"], "One-Two")); err != nil {
@@ -262,7 +199,7 @@ func TestModifyDeleteSingleEntryDeletesAttribute(t *testing.T) {
 }
 
 func TestModifyDeleteAllEntryDeletesAttributes(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.ModifyEntry(dn, DeleteOperation(attrs["sn"])); err != nil {
@@ -289,7 +226,7 @@ func TestModifyDeleteAllEntryDeletesAttributes(t *testing.T) {
 }
 
 func TestModifyReplaceReplacesAttributes(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.ModifyEntry(dn, ReplaceOperation(attrs["sn"], "Three", "Three-Four")); err != nil {
@@ -349,7 +286,7 @@ into:
 ------| cn=Test2
 */
 func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 
 	dn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
@@ -364,7 +301,7 @@ func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
 		Build()
 
 	var sb1 strings.Builder
-	WriteTreeUnderNode(&sb1, dit.root)
+	WriteNodeDescendants(&sb1, dit.root)
 	t.Log(sb1.String())
 
 	err := dit.ModifyEntryDN(dn, rdn, true, &newSuperDn)
@@ -373,7 +310,7 @@ func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
 	}
 
 	var sb2 strings.Builder
-	WriteTreeUnderNode(&sb2, dit.root)
+	WriteNodeDescendants(&sb2, dit.root)
 	t.Log(sb2.String())
 
 	newDn := NewDnBuilder().
@@ -395,7 +332,7 @@ func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
 }
 
 func TestSearchBaseObject(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 
 	baseDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
@@ -435,7 +372,7 @@ func TestSearchBaseObject(t *testing.T) {
 }
 
 func TestSearchSingleLevel(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 
 	baseDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
@@ -469,7 +406,7 @@ func TestSearchSingleLevel(t *testing.T) {
 }
 
 func TestSearchWholeSubtree(t *testing.T) {
-	dit := generateTestDIT()
+	dit := GenerateTestDIT(&schema)
 
 	baseDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").

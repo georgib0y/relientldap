@@ -1,15 +1,15 @@
-package dit
+package model
 
 import (
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
-	"sync"
-
-	"github.com/georgib0y/relientldap/internal/model/schema"
 )
+
+var logger = log.New(os.Stderr, "model: ", log.Lshortfile)
 
 type DITNode struct {
 	parent   *DITNode
@@ -23,6 +23,10 @@ func NewDITNode(parent *DITNode, entry *Entry) *DITNode {
 		children: map[*DITNode]struct{}{},
 		entry:    entry,
 	}
+}
+
+func (n *DITNode) AddChildNode(node *DITNode) {
+	n.children[node] = struct{}{}
 }
 
 func (n *DITNode) AddChild(entry *Entry) {
@@ -39,7 +43,11 @@ type DIT struct {
 	root *DITNode
 }
 
-func (d DIT) GetEntry(dn DN) (*Entry, error) {
+func NewDIT(root *DITNode) *DIT {
+	return &DIT{root}
+}
+
+func (d *DIT) GetEntry(dn DN) (*Entry, error) {
 	node, err := d.getNode(dn)
 	if err != nil {
 		return nil, err
@@ -48,7 +56,7 @@ func (d DIT) GetEntry(dn DN) (*Entry, error) {
 	return node.entry, nil
 }
 
-func (d DIT) InsertEntry(dn DN, entry *Entry) error {
+func (d *DIT) InsertEntry(dn DN, entry *Entry) error {
 	pDn := dn.GetParentDN()
 	pNode, err := d.getNode(pDn)
 	if err != nil {
@@ -66,7 +74,7 @@ func (d DIT) InsertEntry(dn DN, entry *Entry) error {
 	return nil
 }
 
-func (d DIT) ModifyEntry(dn DN, ops ...ChangeOperation) error {
+func (d *DIT) ModifyEntry(dn DN, ops ...ChangeOperation) error {
 	node, err := d.getNode(dn)
 	if err != nil {
 		return err
@@ -84,7 +92,7 @@ func (d DIT) ModifyEntry(dn DN, ops ...ChangeOperation) error {
 	return nil
 }
 
-func (d DIT) ModifyEntryDN(dn DN, rdn RDN, deleteOldRDN bool, newSuperiorDN *DN) error {
+func (d *DIT) ModifyEntryDN(dn DN, rdn RDN, deleteOldRDN bool, newSuperiorDN *DN) error {
 	curr, err := d.getNode(dn)
 	if err != nil {
 		return err
@@ -99,7 +107,7 @@ func (d DIT) ModifyEntryDN(dn DN, rdn RDN, deleteOldRDN bool, newSuperiorDN *DN)
 
 	newParent, err := d.getNode(*newSuperiorDN)
 	if err != nil {
-		log.Printf("could not find parent node at: %s", newSuperiorDN)
+		logger.Printf("could not find parent node at: %s", newSuperiorDN)
 		// TODO do i need to wrap this so i know it's a different notfound/nosuchobject?
 		return err
 	}
@@ -116,7 +124,7 @@ func (d DIT) ModifyEntryDN(dn DN, rdn RDN, deleteOldRDN bool, newSuperiorDN *DN)
 	return nil
 }
 
-func (d DIT) DeleteEntry(dn DN) error {
+func (d *DIT) DeleteEntry(dn DN) error {
 	node, err := d.getNode(dn)
 	if err != nil {
 		return err
@@ -132,7 +140,7 @@ func (d DIT) DeleteEntry(dn DN) error {
 	return nil
 }
 
-func (d DIT) ContainsAttribute(dn DN, attr *schema.Attribute, val string) (bool, error) {
+func (d *DIT) ContainsAttribute(dn DN, attr *Attribute, val string) (bool, error) {
 	node, err := d.getNode(dn)
 	if err != nil {
 		return false, err
@@ -141,7 +149,7 @@ func (d DIT) ContainsAttribute(dn DN, attr *schema.Attribute, val string) (bool,
 	return node.entry.ContainsAttrVal(attr, val)
 }
 
-func (d DIT) getNode(dn DN) (*DITNode, error) {
+func (d *DIT) getNode(dn DN) (*DITNode, error) {
 	node, err := getNodeRecursive(dn.rdns, d.root)
 
 	var nfErr *NodeNotFoundError
@@ -157,8 +165,6 @@ func (d DIT) getNode(dn DN) (*DITNode, error) {
 
 func getNodeRecursive(rdns []RDN, node *DITNode) (*DITNode, error) {
 	if !node.entry.MatchesRdn(rdns[0]) {
-		log.Printf("rdn %s did not match entry", rdns[0])
-		log.Print(node.entry)
 		return nil, &NodeNotFoundError{}
 	}
 
@@ -220,4 +226,82 @@ func writeNodeRec(w io.Writer, node *DITNode, indent int) {
 	for c := range node.children {
 		writeNodeRec(w, c, indent+2)
 	}
+}
+
+/*
+Test DIT Structue
+| dc=dev
+--| dc=georgiboy
+----| cn=Test1
+----| ou=TestOu
+------| cn=Test2
+------| cn=Test3
+*/
+func GenerateTestDIT(schema *Schema) DIT {
+	attrs := map[string]*Attribute{}
+
+	attrNames := []string{"dc", "ou", "cn", "sn"}
+	for _, name := range attrNames {
+		a, ok := schema.FindAttribute(name)
+		if !ok {
+			logger.Panicf("could not find name %q in schema", name)
+		}
+		attrs[name] = a
+	}
+
+	dcDevDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev").
+		Build()
+	dcDev := NewDITNode(nil, NewEntry(WithDN(dcDevDn), WithEntryAttr(attrs["dc"], "dev")))
+
+	dcGeorgiboyDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		Build()
+	dcGeorgiboy := NewDITNode(dcDev, NewEntry(WithDN(dcGeorgiboyDn), WithEntryAttr(attrs["dc"], "georgiboy")))
+
+	ouTestOuDn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").
+		Build()
+	ouTestOu := NewDITNode(dcGeorgiboy, NewEntry(WithDN(ouTestOuDn), WithEntryAttr(attrs["ou"], "TestOu")))
+
+	cnTest1Dn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["cn"], "Test1").
+		Build()
+	cnTest1 := NewDITNode(dcGeorgiboy, NewEntry(
+		WithDN(cnTest1Dn),
+		WithEntryAttr(attrs["cn"], "Test1"),
+		WithEntryAttr(attrs["sn"], "One"),
+		WithEntryAttr(attrs["sn"], "Tester"),
+	))
+
+	cnTest2Dn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test2").
+		Build()
+	cnTest2 := NewDITNode(ouTestOu, NewEntry(
+		WithDN(cnTest2Dn),
+		WithEntryAttr(attrs["cn"], "Test2"),
+		WithEntryAttr(attrs["sn"], "Tester"),
+	))
+
+	cnTest3Dn := NewDnBuilder().
+		AddNamingContext(attrs["dc"], "dev", "georgiboy").
+		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test3").
+		Build()
+	cnTest3 := NewDITNode(ouTestOu, NewEntry(
+		WithDN(cnTest3Dn),
+		WithEntryAttr(attrs["cn"], "Test3"),
+		WithEntryAttr(attrs["sn"], "Tester"),
+	))
+
+	// add each child entry to their parent node
+	ouTestOu.AddChildNode(cnTest2)
+	ouTestOu.AddChildNode(cnTest3)
+	dcGeorgiboy.AddChildNode(cnTest1)
+	dcGeorgiboy.AddChildNode(ouTestOu)
+	dcDev.AddChildNode(dcGeorgiboy)
+
+	return DIT{dcDev}
 }

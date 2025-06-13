@@ -1,12 +1,11 @@
-package dit
+package model
 
 import (
+	"fmt"
 	"strings"
-
-	"github.com/georgib0y/relientldap/internal/model/schema"
 )
 
-type AttrList map[schema.OID]map[string]bool
+type AttrList map[OID]map[string]bool
 
 type (
 	ID uint64
@@ -23,18 +22,18 @@ type (
 
 type RDNOption func(*RDN)
 
-func WithAVA(attr *schema.Attribute, val string) RDNOption {
+func WithAVA(attr *Attribute, val string) RDNOption {
 	return func(r *RDN) {
 		r.avas[attr] = val
 	}
 }
 
 type RDN struct {
-	avas map[*schema.Attribute]string
+	avas map[*Attribute]string
 }
 
 func NewRDN(options ...RDNOption) RDN {
-	r := RDN{map[*schema.Attribute]string{}}
+	r := RDN{map[*Attribute]string{}}
 
 	for _, o := range options {
 		o(&r)
@@ -44,7 +43,7 @@ func NewRDN(options ...RDNOption) RDN {
 }
 
 func (r RDN) Clone() RDN {
-	avas := map[*schema.Attribute]string{}
+	avas := map[*Attribute]string{}
 	for o, a := range r.avas {
 		avas[o] = a
 	}
@@ -101,15 +100,24 @@ func NewDnBuilder() *DnBuilder {
 }
 
 // TODO does the of context strings make sense?
-func (b *DnBuilder) AddNamingContext(dcAttr *schema.Attribute, context ...string) *DnBuilder {
+func (b *DnBuilder) AddNamingContext(dcAttr *Attribute, context ...string) *DnBuilder {
 	for _, dc := range context {
 		b.dn.rdns = append(b.dn.rdns, NewRDN(WithAVA(dcAttr, dc)))
 	}
 	return b
 }
 
-func (b *DnBuilder) AddAvaAsRdn(attr *schema.Attribute, val string) *DnBuilder {
+func (b *DnBuilder) AddAvaAsRdn(attr *Attribute, val string) *DnBuilder {
 	b.dn.rdns = append(b.dn.rdns, NewRDN(WithAVA(attr, val)))
+	return b
+}
+
+func (b *DnBuilder) AddAvaToCurrentRdn(attr *Attribute, val string) *DnBuilder {
+	if len(b.dn.rdns) == 0 {
+		return b.AddAvaAsRdn(attr, val)
+	}
+
+	b.dn.rdns[len(b.dn.rdns)-1].avas[attr] = val
 	return b
 }
 
@@ -167,4 +175,42 @@ func (d DN) String() string {
 	}
 
 	return strings.Join(rdns, ",")
+}
+
+func attrValFromStr(schema *Schema, s string) (*Attribute, string, error) {
+	spl := strings.Split(s, "=")
+	// TODO could be wrong
+	if len(spl) != 2 {
+		return nil, "", fmt.Errorf("malformed ava: %s", s)
+	}
+
+	attr, ok := schema.FindAttribute(strings.TrimSpace(spl[0]))
+	if !ok {
+		return nil, "", fmt.Errorf("unknown attribute %q", strings.TrimSpace(spl[0]))
+	}
+
+	return attr, spl[1], nil
+}
+
+// TODO this is definitely not a complete DN parser, though probs good enough for now
+func NormaliseDN(schema *Schema, s string) (DN, error) {
+	b := NewDnBuilder()
+
+	for _, spl := range strings.Split(s, ",") {
+		avas := strings.Split(spl, "+")
+		a, v, err := attrValFromStr(schema, avas[0])
+		if err != nil {
+			return DN{}, err
+		}
+		b.AddAvaAsRdn(a, v)
+		for _, ava := range avas[1:] {
+			a, v, err := attrValFromStr(schema, ava)
+			if err != nil {
+				return DN{}, err
+			}
+			b.AddAvaToCurrentRdn(a, v)
+		}
+	}
+
+	return b.Build(), nil
 }

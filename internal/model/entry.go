@@ -1,4 +1,4 @@
-package dit
+package model
 
 import (
 	"errors"
@@ -6,13 +6,12 @@ import (
 	"log"
 	"strings"
 
-	"github.com/georgib0y/relientldap/internal/model/schema"
 	"github.com/georgib0y/relientldap/internal/util"
 )
 
 type (
-	ObjClassMap map[*schema.ObjectClass]struct{}
-	AttrMap     map[*schema.Attribute]map[string]struct{}
+	ObjClassMap map[*ObjectClass]struct{}
+	AttrMap     map[*Attribute]map[string]struct{}
 )
 
 type Entry struct {
@@ -31,7 +30,7 @@ func WithDN(dn DN) EntryOption {
 	}
 }
 
-func WithObjClass(oc ...*schema.ObjectClass) EntryOption {
+func WithObjClass(oc ...*ObjectClass) EntryOption {
 	return func(e *Entry) {
 		for _, o := range oc {
 			e.objClasses[o] = struct{}{}
@@ -39,7 +38,7 @@ func WithObjClass(oc ...*schema.ObjectClass) EntryOption {
 	}
 }
 
-func WithEntryAttr(attr *schema.Attribute, val ...string) EntryOption {
+func WithEntryAttr(attr *Attribute, val ...string) EntryOption {
 	return func(e *Entry) {
 		e.AddAttr(attr, val...)
 	}
@@ -70,7 +69,7 @@ func (e *Entry) Clone() *Entry {
 // Assumes that the caller knows what their doing, and that they won't
 // violate any DIT rules e.g. singleval. Required by Modify Operation,
 // which allows for the entry to be temporarlily invalid
-func (e *Entry) AddAttr(attr *schema.Attribute, val ...string) {
+func (e *Entry) AddAttr(attr *Attribute, val ...string) {
 	for _, v := range val {
 		aVals, ok := e.attrs[attr]
 		if !ok {
@@ -82,7 +81,7 @@ func (e *Entry) AddAttr(attr *schema.Attribute, val ...string) {
 	}
 }
 
-func (e *Entry) AddAttrSafe(attr *schema.Attribute, val ...string) error {
+func (e *Entry) AddAttrSafe(attr *Attribute, val ...string) error {
 	if !attr.SingleVal() {
 		e.AddAttr(attr, val...)
 		return nil
@@ -95,7 +94,7 @@ func (e *Entry) AddAttrSafe(attr *schema.Attribute, val ...string) error {
 	return nil
 }
 
-func (e *Entry) ContainsAttrVal(attr *schema.Attribute, val string) (bool, error) {
+func (e *Entry) ContainsAttrVal(attr *Attribute, val string) (bool, error) {
 	a, ok := e.attrs[attr]
 	if !ok {
 		return false, nil
@@ -106,7 +105,7 @@ func (e *Entry) ContainsAttrVal(attr *schema.Attribute, val string) (bool, error
 	for v := range a {
 		m, err := attr.EqRule().Match(val, v)
 		if err != nil {
-			if errors.Is(err, schema.UndefinedMatchingError) {
+			if errors.Is(err, UndefinedMatch) {
 				undefined = err
 			} else {
 				return false, err
@@ -122,7 +121,7 @@ func (e *Entry) ContainsAttrVal(attr *schema.Attribute, val string) (bool, error
 }
 
 // Returns true if the ava was deleted or false if it could not be found
-func (e *Entry) RemoveAttrVal(attr *schema.Attribute, val string) error {
+func (e *Entry) RemoveAttrVal(attr *Attribute, val string) error {
 	a, ok := e.attrs[attr]
 	if !ok {
 		return fmt.Errorf("could not find attr %s to remove", attr.Oid())
@@ -141,7 +140,7 @@ func (e *Entry) RemoveAttrVal(attr *schema.Attribute, val string) error {
 	return nil
 }
 
-func (e *Entry) RemoveAttrVals(attr *schema.Attribute) bool {
+func (e *Entry) RemoveAttrVals(attr *Attribute) bool {
 	log.Print(e.attrs)
 	if _, ok := e.attrs[attr]; !ok {
 		return false
@@ -200,7 +199,7 @@ func (e *Entry) MatchesRdn(rdn RDN) bool {
 
 type ChangeOperation func(*Entry) error
 
-func AddOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
+func AddOperation(attr *Attribute, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		for _, val := range vals {
 			e.AddAttr(attr, val)
@@ -210,7 +209,7 @@ func AddOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
 	}
 }
 
-func DeleteOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
+func DeleteOperation(attr *Attribute, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		if len(vals) == 0 {
 			e.RemoveAttrVals(attr)
@@ -225,7 +224,7 @@ func DeleteOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
 	}
 }
 
-func ReplaceOperation(attr *schema.Attribute, vals ...string) ChangeOperation {
+func ReplaceOperation(attr *Attribute, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		// do nothing if the attribue does not exist
 		if !e.RemoveAttrVals(attr) {

@@ -1,5 +1,12 @@
 package util
 
+import (
+	"log"
+	"os"
+)
+
+var logger = log.New(os.Stderr, "util: ", log.Lshortfile)
+
 func CloneMap[K comparable, V any](m map[K]V) map[K]V {
 	cloned := map[K]V{}
 
@@ -22,6 +29,7 @@ func CloneMapNested[K1, K2 comparable, V any](m map[K1]map[K2]V) map[K1]map[K2]V
 
 func CmpMapKeys[K comparable, V any](m1, m2 map[K]V) bool {
 	if len(m1) != len(m2) {
+
 		return false
 	}
 

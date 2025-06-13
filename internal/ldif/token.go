@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"regexp"
 	"strings"
 )
@@ -56,7 +55,7 @@ func (t TokenType) String() string {
 
 var (
 	numericoid_re = regexp.MustCompile(`^[0-9]+(\.[0-9]+)+$`)
-	keyword_re    = regexp.MustCompile(`^[A-Z]+$`)
+	keyword_re    = regexp.MustCompile(`^[A-Z][A-Z-]*$`)
 	noidlen_re    = regexp.MustCompile(`^[0-9]+(\.[0-9]+)+({[1-9][0-9]*})?$`)
 	descr_re      = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]*$`)
 	qdescr_re     = regexp.MustCompile(`^\'[a-zA-Z][a-zA-Z0-9-]*\'$`)
@@ -169,8 +168,6 @@ func tokenise(r io.Reader) ([]Token, error) {
 		if readErr == io.EOF && tVal == "" {
 			break
 		}
-
-		log.Printf("next tVal is: '%s'", tVal)
 
 		tType, err := determineTokenType(tVal)
 		if err != nil {

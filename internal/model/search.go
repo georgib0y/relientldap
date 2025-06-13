@@ -1,6 +1,4 @@
-package dit
-
-import "github.com/georgib0y/relientldap/internal/model/schema"
+package model
 
 type SearchScope int
 
@@ -32,14 +30,14 @@ func FilterNot(f Filter) Filter {
 	}
 }
 
-func NewPresenceFilter(target *schema.Attribute) Filter {
+func NewPresenceFilter(target *Attribute) Filter {
 	return func(e *Entry) bool {
 		_, ok := e.attrs[target]
 		return ok
 	}
 }
 
-func NewEqualityFilter(target *schema.Attribute, matchVal string) Filter {
+func NewEqualityFilter(target *Attribute, matchVal string) Filter {
 	return func(e *Entry) bool {
 		vals, ok := e.attrs[target]
 		if !ok {

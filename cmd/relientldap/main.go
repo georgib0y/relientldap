@@ -1,119 +1,91 @@
 package main
 
 import (
+	"log"
+	"net"
+	"os"
+
+	"github.com/georgib0y/relientldap/internal/conn"
+	"github.com/georgib0y/relientldap/internal/ldif"
+	m "github.com/georgib0y/relientldap/internal/model"
 )
 
+var logger = log.New(os.Stderr, "main: ", log.Lshortfile)
+
+type Config struct {
+	attributeLdifPath   string
+	objectClassLdifPath string
+}
+
+func loadAttrs(path string) (map[m.OID]*m.Attribute, error) {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.OpenFile(path, os.O_RDONLY, stat.Mode())
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	p := ldif.NewAttributeParser()
+	return ldif.ParseReader(f, p)
+}
+
+func loadObjClasses(path string, attrs map[m.OID]*m.Attribute) (map[m.OID]*m.ObjectClass, error) {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.OpenFile(path, os.O_RDONLY, stat.Mode())
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	p := ldif.NewObjectClassParser(attrs)
+	return ldif.ParseReader(f, p)
+}
+
 func main() {
-// 	entryRepo := PopulatedEntryRepo()
-// 	schemaRepo := PopulatedSchemaRepo()
+	config := Config{
+		attributeLdifPath:   "ldif/attributes.ldif",
+		objectClassLdifPath: "ldif/objClasses.ldif",
+	}
 
-// 	schemaService := NewSchemaService(schemaRepo)
-// 	entryService := NewEntryService(schemaService, entryRepo)
+	attrs, err := loadAttrs(config.attributeLdifPath)
+	if err != nil {
+		logger.Fatalf("could not load attributes: %s", err)
+	}
 
-// 	controller := NewController(entryService)
+	objClasses, err := loadObjClasses(config.objectClassLdifPath, attrs)
+	if err != nil {
+		logger.Fatalf("could not load object classes: %s", err)
+	}
 
-// 	ln, err := net.Listen("tcp", ":8000")
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+	schema := m.NewSchema(attrs, objClasses)
+	dit := m.GenerateTestDIT(schema)
 
-// 	tcpConn, err := ln.Accept()
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+	scheduler := conn.NewDitScheduler(dit, schema)
+	go scheduler.Run()
 
-// 	conn := NewConn(tcpConn)
-// 	defer conn.Close()
+	mux := conn.NewMux(scheduler)
+	mux.AddHandler(conn.BindRequestTag, conn.HandleBindRequest)
 
-// 	for {
-// 		m, err := conn.ReadMessage()
-// 		if err != nil {
-// 			log.Fatal(err)
+	l, err := net.Listen("tcp", ":8000")
+	if err != nil {
+		logger.Fatal(err)
+	}
 
-// 		}
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			logger.Fatal(err)
+		}
 
-// 		if _, ok := m.ProtocolOp.(*UnbindRequest); ok {
-// 			log.Println("Unbind request recieved, closing connection")
-// 			return
-// 		}
+		go mux.Serve(c)
+	}
 
-// 		res, err := HandleMessage(controller, m)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-
-// 		if err = conn.Send(res); err != nil {
-// 			log.Fatal(err)
-// 		}
-// 	}
-// }
-
-// func PopulatedEntryRepo() EntryRepo {
-// 	repo := NewMemEntryRepo()
-
-// 	entries := []Entry{
-// 		{
-// 			id:         2,
-// 			objClasses: map[OID]bool{},
-// 			attrs: map[OID]map[string]bool{
-// 				"dc-oid": {
-// 					"georgiboy": true,
-// 				},
-// 			},
-// 			parent:   ROOT_ID,
-// 			children: map[ID]bool{},
-// 		},
-
-// 		{
-// 			id:         ROOT_ID,
-// 			objClasses: map[OID]bool{},
-// 			attrs: map[OID]map[string]bool{
-// 				"dc-oid": {
-// 					"dev": true,
-// 				},
-// 			},
-// 			parent: ROOT_ID,
-// 			children: map[ID]bool{
-// 				ID(2): true,
-// 			},
-// 		},
-// 	}
-
-// 	for _, entry := range entries {
-// 		repo.Save(entry)
-// 	}
-
-// 	return repo
-// }
-
-// func PopulatedSchemaRepo() SchemaRepo {
-// 	repo := NewMemSchemaRepo()
-
-// 	repo.objClasses = map[OID]ObjectClass{
-// 		"person-oid": {
-// 			numericoid: "person-oid",
-// 			names:      map[string]bool{"person": true},
-// 			supOids:    map[OID]bool{"top": true},
-// 			kind:       Structural,
-// 			mustAttrs:  map[OID]bool{"cn-oid": true},
-// 			mayAttrs:   map[OID]bool{"sn-oid": true},
-// 		},
-// 	}
-
-// 	repo.attribues = map[OID]Attribute{
-// 		"dc-oid": {
-// 			numericoid: "dc-oid",
-// 			names:      map[string]bool{"dc": true},
-// 		},
-// 		"cn-oid": {
-// 			numericoid: "cn-oid",
-// 			names:      map[string]bool{"cn": true, "commonName": true},
-// 		},
-// 		"sn-oid": {
-// 			numericoid: "sn-oid",
-// 			names:      map[string]bool{"sn": true, "surname": true},
-// 		},
-// 	}
-
-// 	return repo
 }

@@ -4,41 +4,41 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/georgib0y/relientldap/internal/model/schema"
+	sch "github.com/georgib0y/relientldap/internal/model/schema"
 )
 
-var attributes = map[schema.OID]*schema.Attribute{
-	"cn":               schema.NewAttributeBuilder().SetOid("cn").Build(),
-	"c":                schema.NewAttributeBuilder().SetOid("c").Build(),
-	"seeAlso":          schema.NewAttributeBuilder().SetOid("seeAlso").Build(),
-	"ou":               schema.NewAttributeBuilder().SetOid("ou").Build(),
-	"l":                schema.NewAttributeBuilder().SetOid("l").Build(),
-	"description":      schema.NewAttributeBuilder().SetOid("description").Build(),
-	"searchGuide":      schema.NewAttributeBuilder().SetOid("searchGuide").Build(),
-	"dc":               schema.NewAttributeBuilder().SetOid("dc").Build(),
-	"serialNumber":     schema.NewAttributeBuilder().SetOid("serialNumber").Build(),
-	"owner":            schema.NewAttributeBuilder().SetOid("owner").Build(),
-	"o":                schema.NewAttributeBuilder().SetOid("o").Build(),
-	"businessCategory": schema.NewAttributeBuilder().SetOid("businessCategory").Build(),
-	"member":           schema.NewAttributeBuilder().SetOid("member").Build(),
+var attributes = map[sch.OID]*sch.Attribute{
+	"cn":               sch.NewAttributeBuilder().SetOid("cn").Build(),
+	"c":                sch.NewAttributeBuilder().SetOid("c").Build(),
+	"seeAlso":          sch.NewAttributeBuilder().SetOid("seeAlso").Build(),
+	"ou":               sch.NewAttributeBuilder().SetOid("ou").Build(),
+	"l":                sch.NewAttributeBuilder().SetOid("l").Build(),
+	"description":      sch.NewAttributeBuilder().SetOid("description").Build(),
+	"searchGuide":      sch.NewAttributeBuilder().SetOid("searchGuide").Build(),
+	"dc":               sch.NewAttributeBuilder().SetOid("dc").Build(),
+	"serialNumber":     sch.NewAttributeBuilder().SetOid("serialNumber").Build(),
+	"owner":            sch.NewAttributeBuilder().SetOid("owner").Build(),
+	"o":                sch.NewAttributeBuilder().SetOid("o").Build(),
+	"businessCategory": sch.NewAttributeBuilder().SetOid("businessCategory").Build(),
+	"member":           sch.NewAttributeBuilder().SetOid("member").Build(),
 }
 
-func getAttrs(oid ...string) []*schema.Attribute {
-	attrs := []*schema.Attribute{}
+func getAttrs(oid ...string) []*sch.Attribute {
+	attrs := []*sch.Attribute{}
 	for _, o := range oid {
-		attrs = append(attrs, attributes[schema.OID(o)])
+		attrs = append(attrs, attributes[sch.OID(o)])
 	}
 	return attrs
 }
 
-var objectClasses = map[schema.OID]*schema.ObjectClass{
-	"top": schema.NewObjectClassBuilder().SetOid("2.5.6.0").Build(),
+var objectClasses = map[sch.OID]*sch.ObjectClass{
+	"top": sch.NewObjectClassBuilder().SetOid("2.5.6.0").Build(),
 }
 
-func getObjClass(oid ...string) []*schema.ObjectClass {
-	ocs := []*schema.ObjectClass{}
+func getObjClass(oid ...string) []*sch.ObjectClass {
+	ocs := []*sch.ObjectClass{}
 	for _, o := range oid {
-		ocs = append(ocs, objectClasses[schema.OID(o)])
+		ocs = append(ocs, objectClasses[sch.OID(o)])
 	}
 	return ocs
 }
@@ -82,6 +82,104 @@ func TestTokeniserTokenisesTokens(t *testing.T) {
 			}
 		}
 	}
+}
+
+const manyAttrDefs = `
+      ( 2.5.4.41 NAME 'name'
+         EQUALITY caseIgnoreMatch
+         SUBSTR caseIgnoreSubstringsMatch
+         SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+	  ( 2.5.4.3 NAME 'cn'
+         SUP name )
+
+      ( 2.5.4.6 NAME 'c'
+         SUP name
+         SYNTAX 1.3.6.1.4.1.1466.115.121.1.11
+         SINGLE-VALUE )
+
+      ( 2.5.4.15 NAME 'businessCategory'
+         EQUALITY caseIgnoreMatch
+         SUBSTR caseIgnoreSubstringsMatch
+         SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+      ( 0.9.2342.19200300.100.1.25 NAME 'dc'
+         EQUALITY caseIgnoreIA5Match
+         SUBSTR caseIgnoreIA5SubstringsMatch
+         SYNTAX 1.3.6.1.4.1.1466.115.121.1.26
+         SINGLE-VALUE )
+`
+
+func TestParsesAttributes(t *testing.T) {
+	nameAttr := sch.NewAttributeBuilder().
+		SetOid("2.5.4.41").
+		AddNames("name").
+		SetEqRule(sch.GetMatchingRuleUnchecked("caseIgnoreMatch")).
+		SetSubStrRule(sch.GetMatchingRuleUnchecked("caseIgnoreSubstringsMatch")).
+		SetSyntax("1.3.6.1.4.1.1466.115.121.1.15", 0).
+		Build()
+
+	exp := []*sch.Attribute{
+		nameAttr,
+		sch.NewAttributeBuilder().
+			SetOid("2.5.4.3").
+			AddNames("cn").
+			SetSup(nameAttr).
+			Build(),
+		sch.NewAttributeBuilder().
+			SetOid("2.5.4.6").
+			AddNames("c").
+			SetSup(nameAttr).
+			SetSyntax("1.3.6.1.4.1.1466.115.121.1.11", 0).
+			SetSingleVal().
+			Build(),
+		sch.NewAttributeBuilder().
+			SetOid("2.5.4.15").
+			AddNames("businessCategory").
+			SetEqRule(sch.GetMatchingRuleUnchecked("caseIgnoreMatch")).
+			SetSubStrRule(sch.GetMatchingRuleUnchecked("caseIgnoreSubstringsMatch")).
+			SetSyntax("1.3.6.1.4.1.1466.115.121.1.15", 0).
+			Build(),
+		sch.NewAttributeBuilder().
+			SetOid("0.9.2342.19200300.100.1.25").
+			AddNames("dc").
+			SetEqRule(sch.GetMatchingRuleUnchecked("caseIgnoreIA5Match")).
+			SetSubStrRule(sch.GetMatchingRuleUnchecked("caseIgnoreIA5SubstringsMatch")).
+			SetSyntax("1.3.6.1.4.1.1466.115.121.1.26", 0).
+			SetSingleVal().
+			Build(),
+	}
+
+	p := NewAttributeParser()
+	parsed_attrs, err := ParseReader(strings.NewReader(manyAttrDefs), p)
+	if err != nil {
+		t.Fatalf("Failed to parse ldif:\n%s\nErr is: %s", manyAttrDefs, err)
+	}
+
+	if len(parsed_attrs) != len(exp) {
+		t.Fatalf("parsed wrong number attributes, got %d expected %d", len(parsed_attrs), len(exp))
+	}
+	for _, e := range exp {
+		attr, ok := parsed_attrs[e.Oid()]
+		if !ok {
+			t.Fatalf("Parsed attributes does not contain %s", e.Oid())
+		}
+
+		if attr == nil {
+			t.Fatalf("attr is nil for %s", e.Oid())
+		}
+
+		if err = sch.AttributesAreEqual(attr, e); err != nil {
+			t.Fatalf("Parsed attr did not match exp for ldif:\n%s\nGot: %s\nExp: %s\nReason: %s",
+				manyAttrDefs,
+				attr.String(),
+				e.String(),
+				err,
+			)
+		}
+	}
+
+	t.Logf("passed parsed ldif: %s", manyAttrDefs)
 }
 
 const manyOcDefs = `
@@ -137,11 +235,11 @@ const manyOcDefs = `
 func TestParsesObjectClass(t *testing.T) {
 	tests := []struct {
 		ldif string
-		exp  []*schema.ObjectClass
+		exp  []*sch.ObjectClass
 	}{
 		{
 			ldif: `( 2.5.6.0 NAME 'top' DESC 'this is some desc' )`,
-			exp: []*schema.ObjectClass{schema.NewObjectClassBuilder().
+			exp: []*sch.ObjectClass{sch.NewObjectClassBuilder().
 				SetOid("2.5.6.0").
 				AddName("top").
 				SetDesc("this is some desc").
@@ -151,66 +249,66 @@ func TestParsesObjectClass(t *testing.T) {
 		{
 			ldif: `( 2.5.6.0 NAME 'top' DESC 'somethign' )
 ( 2.5.6.1 NAME 'secondTop')`,
-			exp: []*schema.ObjectClass{
-				schema.NewObjectClassBuilder().SetOid("2.5.6.0").AddName("top").SetDesc("somethign").Build(),
-				schema.NewObjectClassBuilder().SetOid("2.5.6.1").AddName("secondTop").Build(),
+			exp: []*sch.ObjectClass{
+				sch.NewObjectClassBuilder().SetOid("2.5.6.0").AddName("top").SetDesc("somethign").Build(),
+				sch.NewObjectClassBuilder().SetOid("2.5.6.1").AddName("secondTop").Build(),
 			},
 		},
 		{
 			ldif: `( 2.5.6.6 NAME ( 'person' 'ps' ) )`,
-			exp: []*schema.ObjectClass{
-				schema.NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
+			exp: []*sch.ObjectClass{
+				sch.NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
 			},
 		},
 		{
 			ldif: `( 2.5.6.6 NAME ( 'person' 'ps' ) )`,
-			exp: []*schema.ObjectClass{
-				schema.NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
+			exp: []*sch.ObjectClass{
+				sch.NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
 			},
 		},
 		{
 			ldif: manyOcDefs,
-			exp: []*schema.ObjectClass{
-				schema.NewObjectClassBuilder().
+			exp: []*sch.ObjectClass{
+				sch.NewObjectClassBuilder().
 					SetOid("2.5.6.11").
 					AddName("applicationProcess").
 					AddSup(getObjClass("top")...).
-					SetKind(schema.Structural).
+					SetKind(sch.Structural).
 					AddMustAttr(getAttrs("cn")...).
 					AddMayAttr(getAttrs("seeAlso", "ou", "l", "description")...).
 					Build(),
-				schema.NewObjectClassBuilder().
+				sch.NewObjectClassBuilder().
 					SetOid("2.5.6.2").
 					AddName("country").
 					AddSup(getObjClass("top")...).
-					SetKind(schema.Structural).
+					SetKind(sch.Structural).
 					AddMustAttr(getAttrs("c")...).
 					AddMayAttr(getAttrs("searchGuide", "description")...).
 					Build(),
-				schema.NewObjectClassBuilder().
+				sch.NewObjectClassBuilder().
 					SetOid("1.3.6.1.4.1.1466.344").
 					AddName("dcObject").
 					AddSup(getObjClass("top")...).
-					SetKind(schema.Auxilary).
+					SetKind(sch.Auxilary).
 					AddMustAttr(getAttrs("dc")...).
 					Build(),
-				schema.NewObjectClassBuilder().
+				sch.NewObjectClassBuilder().
 					SetOid("2.5.6.14").
 					AddName("device").
 					AddSup(getObjClass("top")...).
-					SetKind(schema.Structural).
+					SetKind(sch.Structural).
 					AddMustAttr(getAttrs("cn")...).
 					AddMayAttr(getAttrs("serialNumber", "seeAlso", "owner", "ou", "o", "l", "description")...).
 					Build(),
-				schema.NewObjectClassBuilder().
+				sch.NewObjectClassBuilder().
 					SetOid("2.5.6.9").
 					AddName("groupOfNames").
 					AddSup(getObjClass("top")...).
-					SetKind(schema.Structural).
+					SetKind(sch.Structural).
 					AddMustAttr(getAttrs("member", "cn")...).
 					AddMayAttr(getAttrs("businessCategory", "seeAlso", "owner", "ou", "o", "description")...).
 					Build(),
-				schema.NewObjectClassBuilder().
+				sch.NewObjectClassBuilder().
 					SetOid("2.5.6.0").
 					AddName("top").
 					SetDesc("this is some desc").
@@ -236,7 +334,7 @@ func TestParsesObjectClass(t *testing.T) {
 				t.Fatalf("Parsed object classes does not contain %s", e.Oid())
 			}
 
-			if err = schema.ObjectClassesAreEqual(objClass, e); err != nil {
+			if err = sch.ObjectClassesAreEqual(objClass, e); err != nil {
 				t.Fatalf("Parsed object class did not match expected for ldif:\n%s\nGot: %s\nExp: %s\nReason: %s", test.ldif, objClass, e, err)
 			}
 		}

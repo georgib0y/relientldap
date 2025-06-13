@@ -1,4 +1,4 @@
-package dit
+package model
 
 import (
 	"errors"
