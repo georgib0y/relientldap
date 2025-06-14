@@ -111,21 +111,21 @@ func NewBerStructTag(s string) (BerStructTag, error) {
 
 type BerBool bool
 
-func (BerBool) Class() Class {
+func (*BerBool) Class() Class {
 	return Universal
 }
 
-func (BerBool) Construction() Construction {
+func (*BerBool) Construction() Construction {
 	return Primitive
 }
 
-func (BerBool) TagValue() int {
+func (*BerBool) TagValue() int {
 	return BoolUniversalTag
 }
 
-func (b BerBool) EncodeContents(w io.Writer) (int64, error) {
+func (b *BerBool) EncodeContents(w io.Writer) (int64, error) {
 	var v byte
-	if b {
+	if *b {
 		v = 0xFF
 	}
 
@@ -163,15 +163,15 @@ func NewBerInt(i int64) *BerInt {
 	return &b
 }
 
-func (BerInt) Class() Class {
+func (*BerInt) Class() Class {
 	return Universal
 }
 
-func (BerInt) Construction() Construction {
+func (*BerInt) Construction() Construction {
 	return Primitive
 }
 
-func (BerInt) TagValue() int {
+func (*BerInt) TagValue() int {
 	return IntUniversalTag
 }
 
@@ -207,8 +207,8 @@ func encodeInt(w io.Writer, i int64) (int64, error) {
 	return int64(n), err
 }
 
-func (i BerInt) EncodeContents(w io.Writer) (int64, error) {
-	return encodeInt(w, int64(i))
+func (i *BerInt) EncodeContents(w io.Writer) (int64, error) {
+	return encodeInt(w, int64(*i))
 }
 
 func decodeInt(r io.Reader, len int64) (int64, error) {
@@ -381,12 +381,11 @@ func encodeTag(w io.Writer, t Tag) (int, error) {
 }
 
 func decodeTag(r io.Reader) (Tag, error) {
-	// TODO do i really know if bufio reader works like this?
-	br := bufio.NewReader(r)
-	b, err := br.ReadByte()
-	if err != nil {
+	b1 := []byte{0}
+	if _, err := io.ReadFull(r, b1); err != nil {
 		return Tag{}, err
 	}
+	b := b1[0]
 
 	class := Class(b & 0xC0)
 	cons := Construction(b & 0x20)
@@ -424,12 +423,12 @@ func encodeLen(w io.Writer, len int64) (int, error) {
 }
 
 func decodeLen(r io.Reader) (int64, error) {
-	br := bufio.NewReader(r)
-	b, err := br.ReadByte()
-	if err != nil {
+	b1 := []byte{0}
+	if _, err := io.ReadFull(r, b1); err != nil {
 		return 0, err
 	}
 
+	b := b1[0]
 	if b < 128 {
 		return int64(b), nil
 	}
@@ -439,11 +438,9 @@ func decodeLen(r io.Reader) (int64, error) {
 		return 0, fmt.Errorf("length is too big to represent in an int64: %d", lenlen)
 	}
 	buf := make([]byte, 8)
-	n, err := br.Read(buf[8-lenlen:])
-	if err != nil {
+
+	if _, err := io.ReadFull(r, buf[8-lenlen:]); err != nil {
 		return 0, err
-	} else if n != 8-lenlen {
-		return 0, fmt.Errorf("did not read enough bytes, expected %d, read %d", 8-lenlen, n)
 	}
 
 	ui := binary.BigEndian.Uint64(buf)
@@ -468,15 +465,20 @@ func tagFromBerStruct(v BerValue, bst BerStructTag) Tag {
 	return t
 }
 
+// expects a pointer to a bervalue which is a struct containing only exported bervalues
 func encodeSequence(w io.Writer, seq any) (int64, error) {
-	if reflect.TypeOf(seq).Kind() != reflect.Struct {
-		return 0, fmt.Errorf("%q is %s and not a struct", reflect.TypeOf(seq).Kind().String(), reflect.TypeOf(seq).Name())
+	seqV := reflect.ValueOf(seq)
+	if seqV.Kind() != reflect.Pointer {
+		return 0, fmt.Errorf("seq is not a pointer (%s)", seqV.Kind().String())
+	}
+
+	v := seqV.Elem()
+	if v.Kind() != reflect.Struct {
+		return 0, fmt.Errorf("seq does not point to a struct (%s)", seqV.Type().Name())
 	}
 
 	written := int64(0)
 
-	v := reflect.ValueOf(seq)
-	t := reflect.TypeOf(seq)
 	for i := range v.NumField() {
 		f := v.Field(i)
 		b, ok := f.Interface().(BerValue)
@@ -484,7 +486,7 @@ func encodeSequence(w io.Writer, seq any) (int64, error) {
 			return written, fmt.Errorf("%s is not an encodable BerValue", f.Type().Name())
 		}
 
-		bst, err := NewBerStructTag(t.Field(i).Tag.Get("ber"))
+		bst, err := NewBerStructTag(v.Type().Field(i).Tag.Get("ber"))
 		p := tlv{tag: tagFromBerStruct(b, bst), contents: b}
 
 		n, err := encodeTlv(w, p)
@@ -497,6 +499,7 @@ func encodeSequence(w io.Writer, seq any) (int64, error) {
 	return written, nil
 }
 
+// seq is a pointer to a bervalue struct
 func decodeSequence(r io.Reader, len int64, seq any) error {
 	v := reflect.ValueOf(seq)
 	if v.Kind() != reflect.Pointer || v.IsNil() {
@@ -512,10 +515,21 @@ func decodeSequence(r io.Reader, len int64, seq any) error {
 	// value and then calling Decode for the field
 	for i := range elm.Type().NumField() {
 		f := elm.Field(i)
-		f.SetZero()
+
+		if !f.CanSet() {
+			return fmt.Errorf("field %q (%d) is cannot be set", f.Type().Name(), i)
+		}
+
+		if f.Kind() != reflect.Pointer {
+			return fmt.Errorf("field %q must be a pointer type", f.Type().Name())
+		}
+
+		zero := reflect.New(f.Type().Elem())
+		f.Set(zero)
+
 		b, ok := f.Interface().(BerValue)
 		if !ok {
-			return fmt.Errorf("field %q is not a BerValue", f.Type().Name())
+			return fmt.Errorf("field %q does not point to a BerValue", f.Type().Name())
 		}
 
 		if err := Decode(r, b); err != nil {
@@ -564,7 +578,7 @@ func Encode(w io.Writer, b BerValue) (int, error) {
 func Decode(r io.Reader, b BerValue) error {
 	t, err := decodeTag(r)
 	if err != nil {
-		return err
+		return fmt.Errorf("error decoding tag: %w", err)
 	}
 
 	if t.class != b.Class() {
@@ -581,7 +595,7 @@ func Decode(r io.Reader, b BerValue) error {
 
 	len, err := decodeLen(r)
 	if err != nil {
-		return err
+		return fmt.Errorf("error decoding len: %w", err)
 	}
 
 	return b.DecodeContents(r, len)
