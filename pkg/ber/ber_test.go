@@ -3,9 +3,7 @@ package ber
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -23,7 +21,7 @@ func bytesAsHex(b []byte) string {
 }
 
 func TestEncodeBool(t *testing.T) {
-	testBool := BerBool(true)
+	testBool := true
 
 	var buf bytes.Buffer
 	_, err := Encode(&buf, &testBool)
@@ -40,7 +38,7 @@ func TestEncodeBool(t *testing.T) {
 func TestDecodeBool(t *testing.T) {
 	trueb := []byte{0x01, 0x01, 0xFF}
 	truebuf := bytes.NewBuffer(trueb)
-	var trueber BerBool
+	var trueber bool
 	if err := Decode(truebuf, &trueber); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +48,7 @@ func TestDecodeBool(t *testing.T) {
 
 	falseb := []byte{0x01, 0x01, 0x00}
 	falsebuf := bytes.NewBuffer(falseb)
-	var falseber BerBool
+	var falseber bool
 	if err := Decode(falsebuf, &falseber); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +58,7 @@ func TestDecodeBool(t *testing.T) {
 
 	badb := []byte{0x01, 0x01, 0x12}
 	badbuf := bytes.NewBuffer(badb)
-	var badber BerBool
+	var badber bool
 	if err := Decode(badbuf, &badber); err == nil {
 		t.Fatalf("expected error when decoding %s", bytesAsHex(badb))
 	}
@@ -83,11 +81,8 @@ func TestEncodeInt(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Log(strconv.FormatInt(int64(test.v), 2))
-		t.Log(strconv.FormatInt(int64(test.v), 16))
-		bi := BerInt(test.v)
 		var buf bytes.Buffer
-		_, err := Encode(&buf, &bi)
+		_, err := Encode(&buf, &test.v)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +97,7 @@ func TestEncodeInt(t *testing.T) {
 func TestDecodeInt(t *testing.T) {
 	tests := []struct {
 		b   []byte
-		exp int64
+		exp int
 	}{
 		{[]byte{0x02, 0x01, 0x0F}, 0x0F},
 		{[]byte{0x02, 0x02, 0x0F, 0xFF}, 0x0FFF},
@@ -116,190 +111,264 @@ func TestDecodeInt(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		var bi BerInt
+		var i int
 		buf := bytes.NewBuffer(test.b)
-		if err := Decode(buf, &bi); err != nil {
+		if err := Decode(buf, &i); err != nil {
 			t.Fatal(err)
 		}
-		if int64(bi) != test.exp {
-			t.Fatalf("decoded %d not equal to expected %d", bi, test.exp)
+		if i != test.exp {
+			t.Fatalf("decoded %d not equal to expected %d", i, test.exp)
 		}
 	}
 }
 
-type BindRequestSimple struct {
-	Version *BerInt
-	Name    *BerOctetString
-	Simple  *BerOctetString
+type LdapMsg struct {
+	MessageId int
+	Request   *LdapMsgChoice
 }
 
-func NewBindRequestSimple(version int, name, simple string) BindRequestSimple {
-	return BindRequestSimple{
-		Version: NewBerInt(int64(version)),
-		Name:    NewBerOctetString([]byte(name)),
-		Simple:  NewBerOctetString([]byte(simple)),
-	}
+var (
+	BindRequestTag = Tag{Application, Constructed, 0}
+)
+
+type LdapMsgChoice struct {
+	t           *Tag
+	BindRequest BindRequest
 }
 
-func (*BindRequestSimple) Class() Class {
-	return Application
+func NewLdapBrMsgChoice(br BindRequest) *LdapMsgChoice {
+	var l LdapMsgChoice
+	l.t = new(Tag)
+	*l.t = BindRequestTag
+	l.BindRequest = br
+	return &l
 }
 
-func (*BindRequestSimple) Construction() Construction {
-	return Constructed
-}
-
-func (*BindRequestSimple) TagValue() int {
-	return 0
-}
-
-func (b *BindRequestSimple) EncodeContents(w io.Writer) (int64, error) {
-	return encodeSequence(w, b)
-}
-
-func (b *BindRequestSimple) DecodeContents(r io.Reader, len int64) error {
-	return decodeSequence(r, len, b)
-}
-
-type SaslCreds struct {
-	Mechanism   *BerOctetString
-	Credentials *BerOctetString
-}
-
-func (*SaslCreds) Class() Class {
-	return Application
-}
-
-func (*SaslCreds) Construction() Construction {
-	return Constructed
-}
-
-func (*SaslCreds) TagValue() int {
-	return 0
-}
-
-func (c *SaslCreds) EncodeContents(w io.Writer) (int64, error) {
-	return encodeSequence(w, c)
-}
-
-func (c *SaslCreds) DecodeContents(r io.Reader, len int64) error {
-	return decodeSequence(r, len, c)
-}
-
-type BindRequestSasl struct {
-	Version *BerInt
-	Name    *BerOctetString
-	Sasl    *SaslCreds
-}
-
-func NewBindRequestSasl(v int, name, mechanism, creds string) BindRequestSasl {
-	return BindRequestSasl{
-		Version: NewBerInt(int64(v)),
-		Name:    NewBerOctetString([]byte(name)),
-		Sasl: &SaslCreds{
-			Mechanism:   NewBerOctetString([]byte(mechanism)),
-			Credentials: NewBerOctetString([]byte(creds)),
-		},
+func (l *LdapMsgChoice) Choose(t Tag) (any, error) {
+	switch t {
+	case BindRequestTag:
+		l.t = new(Tag)
+		*l.t = t
+		return &l.BindRequest, nil
 	}
 
+	return nil, fmt.Errorf("unexpected tag for ldap msg choice")
 }
 
-func (*BindRequestSasl) Class() Class {
-	return Application
+func (l *LdapMsgChoice) Tag() (Tag, bool) {
+	if l.t == nil {
+		return Tag{}, false
+	}
+
+	return *l.t, true
 }
 
-func (*BindRequestSasl) Construction() Construction {
-	return Constructed
+type BindRequest struct {
+	Version int
+	Name    string
+	Auth    *BindReqChoice
 }
 
-func (*BindRequestSasl) TagValue() int {
-	return 0
+type SaslAuth struct {
+	Mechanism   string
+	Credentials []byte
 }
 
-func (b *BindRequestSasl) EncodeContents(w io.Writer) (int64, error) {
-	return encodeSequence(w, b)
+var (
+	BrSimpleTag = Tag{ContextSpecific, Constructed, 0}
+	BrSaslTag   = Tag{ContextSpecific, Constructed, 3}
+)
+
+type BindReqChoice struct {
+	t      *Tag
+	Simple string
+	Sasl   SaslAuth
 }
 
-func (b *BindRequestSasl) DecodeContents(r io.Reader, len int64) error {
-	return decodeSequence(r, len, b)
+func NewSimpleBindRequest(simple string) *BindReqChoice {
+	var br BindReqChoice
+	br.t = new(Tag)
+	*br.t = BrSimpleTag
+	br.Simple = simple
+	return &br
+}
+
+func NewSaslBindRequest(mechanism string, credentials []byte) *BindReqChoice {
+	var br BindReqChoice
+	br.t = new(Tag)
+	*br.t = BrSaslTag
+	br.Sasl = SaslAuth{mechanism, credentials}
+	return &br
+}
+
+func (b *BindReqChoice) Choose(t Tag) (any, error) {
+	switch {
+	case t.Equals(BrSimpleTag):
+		b.t = new(Tag)
+		*b.t = t
+		return &b.Simple, nil
+	case t.Equals(BrSaslTag):
+		b.t = new(Tag)
+		*b.t = t
+		return &b.Sasl, nil
+	}
+
+	return nil, fmt.Errorf("unexpected tag for bind request choice")
+}
+
+func (b *BindReqChoice) Tag() (Tag, bool) {
+	if b.t == nil {
+		return Tag{}, false
+	}
+	return *b.t, true
 }
 
 func TestEncodeBindRequestSimple(t *testing.T) {
-	brs := NewBindRequestSimple(3, "test", "123")
+	ldapChoice := NewLdapBrMsgChoice(BindRequest{
+		Version: 3,
+		Name:    "test",
+		Auth:    NewSimpleBindRequest("123"),
+	})
 
-	var (
-		varEncode    = []byte{0x02, 0x01, 0x03}
-		nameEncode   = []byte{0x04, 0x04, 0x74, 0x65, 0x73, 0x74}
-		simpleEncode = []byte{0x04, 0x03, 0x31, 0x32, 0x33}
-	)
+	br := LdapMsg{MessageId: 1, Request: ldapChoice}
 
-	bTag := byte(Application | Constructed)
-	exp := []byte{bTag, 0x0E}
-	exp = append(exp, varEncode...)
-	exp = append(exp, nameEncode...)
-	exp = append(exp, simpleEncode...)
+	exp := []byte{
+		0x30, 0x13, //ldapmsg tag/len
+		0x02, 0x01, 0x01, //msgid: 1
+		0x60, 0x0E, // bind req tag/len
+		0x02, 0x01, 0x03, // version: 3
+		0x04, 0x04, 0x74, 0x65, 0x73, 0x74, // name: "test"
+		ContextSpecific | Constructed, 0x03, 0x31, 0x32, 0x33, // cred: "123"
+	}
 
 	var buf bytes.Buffer
-	_, err := Encode(&buf, &brs)
-	if err != nil {
+	if _, err := Encode(&buf, &br); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log(bytesAsHex(buf.Bytes()))
 	if !reflect.DeepEqual(buf.Bytes(), exp) {
-		t.Fatalf("encoding %s did not match expected %s", bytesAsHex(buf.Bytes()), bytesAsHex(exp))
+		t.Fatalf("encoding:\n%s\ndid not match expected:\n%s\n", bytesAsHex(buf.Bytes()), bytesAsHex(exp))
 	}
-
 }
 
 func TestDecodeBindRequestSimple(t *testing.T) {
-	var br BindRequestSimple
+	var br LdapMsg
 
-	b := []byte{0x60, 0x0e, 0x02, 0x01, 0x03, 0x04, 0x04, 0x74, 0x65, 0x73, 0x74, 0x04, 0x03, 0x31, 0x32, 0x33}
+	b := []byte{
+		0x30, 0x13, //ldapmsg tag/len
+		0x02, 0x01, 0x01, //msgid: 1
+		0x60, 0x0E, // bind req tag/len
+		0x02, 0x01, 0x03, // version: 3
+		0x04, 0x04, 0x74, 0x65, 0x73, 0x74, // name: "test"
+		ContextSpecific | Constructed, 0x03, 0x31, 0x32, 0x33, // cred: "123"
+	}
+
 	buf := bytes.NewBuffer(b)
 
 	if err := Decode(buf, &br); err != nil {
 		t.Fatal(err)
 	}
 
-	exp := NewBindRequestSimple(3, "test", "123")
+	exp := LdapMsg{
+		MessageId: 1,
+		Request: NewLdapBrMsgChoice(BindRequest{
+			Version: 3,
+			Name:    "test",
+			Auth:    NewSimpleBindRequest("123"),
+		}),
+	}
 
+	if br.MessageId != exp.MessageId {
+		t.Fatalf("decoded msgid %d not eq to exp %d", br.MessageId, exp.MessageId)
+	}
+
+	brReq := br.Request.BindRequest
+	expReq := exp.Request.BindRequest
 	switch {
-	case *br.Version != *exp.Version:
-		t.Fatalf("decoded version %d not eq to exp %d", *br.Version, *exp.Version)
-	case !reflect.DeepEqual(*br.Name, *exp.Name):
-		t.Fatalf("decoded name %s not eq to exp %s", string(*br.Name), string(*exp.Name))
-	case !reflect.DeepEqual(*br.Simple, *exp.Simple):
-		t.Fatalf("decoded simple %s not eq to exp %s", string(*br.Simple), string(*exp.Simple))
+	case brReq.Version != expReq.Version:
+		t.Fatalf("decoded version %d not eq to exp %d", brReq.Version, expReq.Version)
+	case !reflect.DeepEqual(brReq.Name, expReq.Name):
+		t.Fatalf("decoded name %s not eq to exp %s", string(brReq.Name), string(expReq.Name))
+	case !reflect.DeepEqual(brReq.Auth.Simple, expReq.Auth.Simple):
+		t.Fatalf("decoded simple %s not eq to exp %s", string(brReq.Auth.Simple), string(expReq.Auth.Simple))
 	}
 }
 
 func TestEncodeBindRequestSasl(t *testing.T) {
-	brs := NewBindRequestSasl(3, "test", "m", "123")
+	br := LdapMsg{
+		MessageId: 1,
+		Request: NewLdapBrMsgChoice(BindRequest{
+			Version: 3,
+			Name:    "test",
+			Auth:    NewSaslBindRequest("m", []byte("123")),
+		}),
+	}
 
-	var (
-		versEncode = []byte{0x02, 0x01, 0x03}
-		nameEncode = []byte{0x04, 0x04, 0x74, 0x65, 0x73, 0x74}
-		mechEncode = []byte{0x04, 0x01, 0x6D}
-		credEncode = []byte{0x04, 0x03, 0x31, 0x32, 0x33}
-	)
-
-	bTag := byte(Application | Constructed)
-	exp := []byte{bTag, 0x11}
-	exp = append(exp, versEncode...)
-	exp = append(exp, nameEncode...)
-	exp = append(exp, mechEncode...)
-	exp = append(exp, credEncode...)
+	exp := []byte{
+		0x30, 0x18, //ldapmsg tag/len
+		0x02, 0x01, 0x01, //msgid: 1
+		0x60, 0x13, // bind req tag/len
+		0x02, 0x01, 0x03, // version: 3
+		0x04, 0x04, 0x74, 0x65, 0x73, 0x74, // name: "test"
+		ContextSpecific | Constructed | 0x03, 0x08, // sasl tag/len
+		0x04, 0x01, 0x6D, // mech "m"
+		0x04, 0x03, 0x31, 0x32, 0x33, // creds "123"
+	}
 
 	var buf bytes.Buffer
-	_, err := Encode(&buf, &brs)
+	_, err := Encode(&buf, &br)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log(bytesAsHex(buf.Bytes()))
 	if !reflect.DeepEqual(buf.Bytes(), exp) {
-		t.Fatalf("encoding %s did not match expected %s", bytesAsHex(buf.Bytes()), bytesAsHex(exp))
+		t.Fatalf("encoding:\n%s\ndid not match expected:\n%s\n", bytesAsHex(buf.Bytes()), bytesAsHex(exp))
 	}
 
+}
+
+func TestDecodeBindRequestSasl(t *testing.T) {
+	var br LdapMsg
+
+	b := []byte{
+		0x30, 0x18, //ldapmsg tag/len
+		0x02, 0x01, 0x01, //msgid: 1
+		0x60, 0x13, // bind req tag/len
+		0x02, 0x01, 0x03, // version: 3
+		0x04, 0x04, 0x74, 0x65, 0x73, 0x74, // name: "test"
+		ContextSpecific | Constructed | 0x03, 0x08, // sasl tag/len
+		0x04, 0x01, 0x6D, // mechanism "m"
+		0x04, 0x03, 0x31, 0x32, 0x33, // credentials "123"
+	}
+
+	buf := bytes.NewBuffer(b)
+
+	if err := Decode(buf, &br); err != nil {
+		t.Fatal(err)
+	}
+
+	exp := LdapMsg{
+		MessageId: 1,
+		Request: NewLdapBrMsgChoice(BindRequest{
+			Version: 3,
+			Name:    "test",
+			Auth:    NewSaslBindRequest("m", []byte("123")),
+		}),
+	}
+
+	brReq := br.Request.BindRequest
+	expReq := exp.Request.BindRequest
+	brSasl := brReq.Auth.Sasl
+	expSasl := brReq.Auth.Sasl
+
+	switch {
+	case brReq.Version != expReq.Version:
+		t.Fatalf("decoded version %d not eq to exp %d", brReq.Version, expReq.Version)
+	case !reflect.DeepEqual(brReq.Name, expReq.Name):
+		t.Fatalf("decoded name %s not eq to exp %s", string(brReq.Name), string(expReq.Name))
+	case !reflect.DeepEqual(brSasl.Mechanism, expSasl.Mechanism):
+		t.Fatalf("decoded mechanism %s not eq to exp %s", brSasl.Mechanism, expSasl.Mechanism)
+	case !reflect.DeepEqual(brSasl.Credentials, expSasl.Credentials):
+		t.Fatalf("decoded mechanism %s not eq to exp %s", string(brSasl.Credentials), string(expSasl.Credentials))
+	}
 }
