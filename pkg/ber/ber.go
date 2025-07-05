@@ -1,11 +1,8 @@
 package ber
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"reflect"
@@ -82,15 +79,26 @@ func (c Construction) String() string {
 	}
 }
 
+func constructionFromString(s string) (Construction, error) {
+	switch s {
+	case "primitive":
+		return Primitive, nil
+	case "constructed":
+		return Constructed, nil
+	default:
+		return Private, fmt.Errorf("unknown construction, struct tag is %s", s)
+	}
+}
+
 type Tag struct {
-	class     Class
-	construct Construction
-	value     int
+	Class     Class
+	Construct Construction
+	Value     int
 }
 
 func (t Tag) String() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Tag - %s %s %d", t.class, t.construct, t.value)
+	fmt.Fprintf(&sb, "Tag - %s %s %d", t.Class, t.Construct, t.Value)
 
 	var buf bytes.Buffer
 	_, err := encodeTag(&buf, t)
@@ -109,13 +117,13 @@ func (t Tag) String() string {
 }
 
 func (t Tag) Equals(o Tag) bool {
-	return t.class == o.class && t.construct == o.construct && t.value == o.value
+	return t.Class == o.Class && t.Construct == o.Construct && t.Value == o.Value
 }
 
 func defaultTag(v any) (Tag, error) {
 	// try and get underlying value of choice
-	if c, ok := v.(Choice); ok {
-		t, ok := c.Tag()
+	if c, ok := v.(choice); ok {
+		t, _, ok := c.chosen()
 		if !ok {
 			logger.Print("no choice tag")
 			return Tag{}, fmt.Errorf("tag has not been set for choice")
@@ -126,27 +134,38 @@ func defaultTag(v any) (Tag, error) {
 
 	rv := reflect.ValueOf(v)
 
-	if rv.Kind() == reflect.Pointer {
-		rv = rv.Elem()
+	if rv.Kind() == reflect.Pointer && rv.CanInterface() {
+		logger.Printf("default tag rv %q can interface", rv.Type())
+		if o, ok := rv.Elem().Interface().(optional); ok {
+			logger.Print("v is an optional")
+			// not concerned with whether not not o is some, just need the
+			// type information
+			val, _ := o.getAny()
+			// calling elem to get what the pointer points to
+			rv = reflect.ValueOf(val)
+		} else {
+			rv = rv.Elem()
+		}
+
 	}
 
 	var t Tag
 	switch rv.Kind() {
 	case reflect.Bool:
-		t = Tag{class: Universal, construct: Primitive, value: BoolUniversalTagVal}
+		t = Tag{Class: Universal, Construct: Primitive, Value: BoolUniversalTagVal}
 	case reflect.Int:
-		t = Tag{class: Universal, construct: Primitive, value: IntUniversalTagVal}
+		t = Tag{Class: Universal, Construct: Primitive, Value: IntUniversalTagVal}
 	case reflect.String:
-		t = Tag{class: Universal, construct: Primitive, value: OctetStrUniversalTag}
+		t = Tag{Class: Universal, Construct: Primitive, Value: OctetStrUniversalTag}
 	case reflect.Slice:
 		// only allow byte slices
 		if rv.Type().Elem().Kind() == reflect.Uint8 {
-			t = Tag{class: Universal, construct: Primitive, value: OctetStrUniversalTag}
+			t = Tag{Class: Universal, Construct: Primitive, Value: OctetStrUniversalTag}
 		}
 	case reflect.Struct:
-		t = Tag{class: Universal, construct: Constructed, value: SeqUniversalTagVal}
+		t = Tag{Class: Universal, Construct: Constructed, Value: SeqUniversalTagVal}
 	case reflect.Map:
-		t = Tag{class: Universal, construct: Constructed, value: SetUniversalTagVal}
+		t = Tag{Class: Universal, Construct: Constructed, Value: SetUniversalTagVal}
 	}
 
 	var zero Tag
@@ -157,26 +176,158 @@ func defaultTag(v any) (Tag, error) {
 	return t, nil
 }
 
-type Choice interface {
-	// Given a Tag, returns a pointer to the corresponding value,
-	// returns an error if Tag does not match
-	Choose(Tag) (any, error)
-	// Returns the tag of the chosen value if set, or false if no value has been set
-	Tag() (Tag, bool)
+type choice interface {
+	choose(t Tag) (any, error)
+	chosen() (Tag, any, bool)
 }
 
-func Chosen(c Choice) (any, error) {
-	t, ok := c.Tag()
-	if !ok {
-		return nil, fmt.Errorf("cannot get chosen: no choice has been made")
+// TODO maybe make a type alias for a pointer to choice?
+type Choice[T any] struct {
+	Choices T
+	Tag     Tag
+	Val     any
+}
+
+func NewChoice[T any]() *Choice[T] {
+	return &Choice[T]{}
+}
+
+func NewChosen[T any, V any](t Tag, v V) (*Choice[T], error) {
+	var c Choice[T]
+
+	chosen, err := c.choose(t)
+	if err != nil {
+		return &c, err
 	}
 
-	return c.Choose(t)
+	// need to call Elem() twice here, becuase choose returns a pointer to c.Val, which is an interface{}
+	// valueof(chosen).type == *interface{}
+	// so valueof(chosen).elem().type == interface{}
+	// so valueof(chosen).elem().elem().type == some type
+	// then need to call elem() on that so that it gets the underlying type of the interface{}
+
+	cptr, ok := chosen.(*V)
+	if !ok {
+		return &c, fmt.Errorf("chosen %q is not a pointer to value's type %q", reflect.TypeOf(chosen), reflect.TypeOf(v))
+	}
+
+	*cptr = v
+
+	logger.Printf("new chosen's value is: %s", c.Val)
+	return &c, nil
+}
+
+// returns a pointer to the value chosen by tag
+func (c *Choice[T]) choose(t Tag) (any, error) {
+	v := reflect.ValueOf(&c.Choices).Elem()
+
+	// TODO interface nullability??
+	if v.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("choices is not a struct")
+	}
+
+	for i := range v.NumField() {
+		// TODO get choice from struct tag
+		bst, err := NewBerStructTag(v.Type().Field(i).Tag.Get("ber"))
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse struct tag for field %q: %w", v.Type().Field(i).Name, err)
+		}
+
+		if bst.val == nil {
+			return nil, fmt.Errorf("no choice value for field %q", v.Type().Field(i).Name)
+		}
+
+		// TODO if bst fully matches t
+		if t.Value != *bst.val {
+			continue
+		}
+
+		f := v.Field(i)
+		if !f.CanAddr() {
+			return nil, fmt.Errorf("field %q can not be addred", v.Type().Field(i).Name)
+		}
+
+		if f.Addr().CanSet() {
+			return nil, fmt.Errorf("addr cannot be set for field %q", v.Type().Field(i).Name)
+		}
+
+		c.Tag = t
+		c.Val = f.Addr().Interface()
+		return c.Val, nil
+	}
+
+	return nil, fmt.Errorf("unknown tag %s for choices: %s", t, v.Type().Name())
+}
+
+// will return the tag and a pointer to the chosen value, or false if nothing has been set
+func (c *Choice[T]) chosen() (Tag, any, bool) {
+	var zero Tag
+	return c.Tag, c.Val, c.Tag != zero
+}
+
+type optional interface {
+	// Returns a pointer to the option's value as an interface{}
+	// the returned value should be a pointer to the zero value if unset, rather than nil so that
+	// other functions may know the type of optional
+	// TODO maybe make a zero() function that handles this?
+	getAny() (any, bool)
+	setAny(v any) error
+}
+
+type Optional[T any] struct {
+	is_some bool
+	val     T
+}
+
+func NewOptional[T any](v T) *Optional[T] {
+	return &Optional[T]{is_some: true, val: v}
+}
+
+func NewEmpty[T any]() *Optional[T] {
+	var zero T
+	return &Optional[T]{is_some: false, val: zero}
+}
+
+func (o *Optional[T]) Get() (T, bool) {
+	if o == nil {
+		// TODO defaultTag() relies on getAny() to return some value that can be reflected on
+		// ugly?
+		var zero T
+		return zero, false
+	}
+	return o.val, o.is_some
+}
+
+func (o *Optional[T]) getAny() (any, bool) {
+	return o.Get()
+}
+
+func (o *Optional[T]) Set(v T) {
+	o.val = v
+	o.is_some = true
+}
+
+func (o *Optional[T]) setAny(v any) error {
+	if reflect.TypeOf(v) != reflect.TypeFor[T]() {
+		return fmt.Errorf("v's type %s does not match optional's %s", reflect.TypeOf(v), reflect.TypeFor[T]())
+	}
+	vt, ok := v.(T)
+	if !ok {
+		return fmt.Errorf("could not cast to %s", reflect.TypeFor[T]())
+	}
+
+	o.Set(vt)
+	return nil
+}
+
+func (o *Optional[T]) Unset(v T) {
+	o.is_some = false
 }
 
 type BerStructTag struct {
-	tag   *int
 	class *Class
+	cons  *Construction
+	val   *int
 }
 
 func NewBerStructTag(s string) (BerStructTag, error) {
@@ -199,16 +350,6 @@ func NewBerStructTag(s string) (BerStructTag, error) {
 
 	var bst BerStructTag
 
-	if tagStr, ok := kv["tag"]; ok {
-		tag, err := strconv.Atoi(tagStr)
-		if err != nil {
-			return BerStructTag{}, fmt.Errorf("invalid tag value %q: %w", tagStr, err)
-		}
-
-		bst.tag = new(int)
-		*bst.tag = tag
-	}
-
 	if classStr, ok := kv["class"]; ok {
 		class, err := classFromStructTag(classStr)
 		if err != nil {
@@ -219,493 +360,51 @@ func NewBerStructTag(s string) (BerStructTag, error) {
 		*bst.class = class
 	}
 
+	if consStr, ok := kv["cons"]; ok {
+		cons, err := constructionFromString(consStr)
+		if err != nil {
+			return BerStructTag{}, fmt.Errorf("invalid construction value %q: %w", consStr, err)
+		}
+
+		bst.cons = new(Construction)
+		*bst.cons = cons
+	}
+
+	if valStr, ok := kv["val"]; ok {
+		val, err := strconv.Atoi(valStr)
+		if err != nil {
+			return BerStructTag{}, fmt.Errorf("invalid tag value %q: %w", valStr, err)
+		}
+
+		bst.val = new(int)
+		*bst.val = val
+	}
+
 	return bst, nil
 }
 
-func encodeBool(w io.Writer, b bool) (int, error) {
-	var v byte
-	if b {
-		v = 0xFF
-	}
-
-	n, err := w.Write([]byte{v})
-	return n, err
-}
-
-func decodeBool(r io.Reader, len int) (bool, error) {
-	if len != 1 {
-		return false, fmt.Errorf("incorrect byte len (%d) for a boolean, expected 1", len)
-	}
-
-	br := bufio.NewReader(r)
-	byt, err := br.ReadByte()
-	if err != nil {
-		return false, err
-	}
-
-	switch byt {
-	case 0x00:
-		return false, nil
-	case 0xFF:
-		return true, nil
-	default:
-		return false, fmt.Errorf("unknown byte value 0x%X", byt)
-	}
-}
-
-func reduce(rep64 []byte, neg bool) []byte {
-	start := 0
-
-	// if the first byte and the first bit of the second byte are
-	// either all 1s or 0s then the first byte is redundant and can be
-	// ignored
-	for i := 0; i < len(rep64)-1; i++ {
-		if neg && rep64[i] == 0xFF && rep64[i+1]&0x80 > 0 {
-			start += 1
-			continue
-		}
-
-		if !neg && rep64[i] == 0x00 && rep64[i+1]&0x80 == 0 {
-			start += 1
-			continue
-		}
-
-		break
-	}
-
-	return rep64[start:]
-}
-
-func encodeInt(w io.Writer, i int) (int, error) {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(i))
-	n, err := w.Write(reduce(b, i < 0))
-	return n, err
-}
-
-func decodeInt(r io.Reader, len int) (int, error) {
-	if len > 8 {
-		return 0, fmt.Errorf("int len (%d) is too long", len)
-	}
-
-	byteRep := make([]byte, 8)
-	start := 8 - len
-	r.Read(byteRep[start:])
-
-	twos := byte(0x00)
-	if byteRep[start]&0x80 > 0 {
-		twos = 0xFF
-	}
-	// padd the start of the int64 with the twos complement that would
-	// have been reduced when encoded
-	for i := 0; i < start; i++ {
-		byteRep[i] = twos
-	}
-
-	i := int(binary.BigEndian.Uint64(byteRep))
-	return i, nil
-}
-
-func decodeOctetString(r io.Reader, len int) ([]byte, error) {
-	b := make([]byte, len)
-	_, err := io.ReadFull(r, b)
-	if err != nil {
-		return nil, err
-	}
-
-	return b, nil
-}
-
-func encodeTag(w io.Writer, t Tag) (int, error) {
-	id := byte(t.class) | byte(t.construct)
-	if t.value >= 0x1F {
-		return 0, fmt.Errorf("tag val is %d, multibyte identifiers unsupported", t.value)
-	}
-
-	id |= byte(t.value)
-
-	return w.Write([]byte{id})
-}
-
-func decodeTag(r io.Reader) (Tag, error) {
-	b1 := []byte{0}
-	if _, err := io.ReadFull(r, b1); err != nil {
-		return Tag{}, err
-	}
-	b := b1[0]
-
-	class := Class(b & 0xC0)
-	cons := Construction(b & 0x20)
-	val := int(b & 0x1F)
-	if val == 31 {
-		return Tag{}, fmt.Errorf("Multibyte tag values unsupported")
-	}
-
-	return Tag{class, cons, val}, nil
-}
-
-func encodeLen(w io.Writer, len int) (int, error) {
-	if len < 128 {
-		return w.Write([]byte{byte(len)})
-	}
-
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(len))
-
-	start := 0
-	for i, byteRep := range buf {
-		if byteRep == 0 {
-			start = i
-		}
-	}
-
-	lenlen := byte(8 - start)
-	n1, err := w.Write([]byte{0x80 | lenlen})
-	if err != nil {
-		return n1, err
-	}
-
-	n2, err := w.Write(buf[start:])
-	return n1 + n2, err
-}
-
-func decodeLen(r io.Reader) (int, error) {
-	b1 := []byte{0}
-	if _, err := io.ReadFull(r, b1); err != nil {
-		return 0, err
-	}
-
-	b := b1[0]
-	if b < 128 {
-		return int(b), nil
-	}
-
-	lenlen := int(b & 0x7F)
-	if lenlen > 8 {
-		return 0, fmt.Errorf("length is too big to represent in an int64: %d", lenlen)
-	}
-	buf := make([]byte, 8)
-
-	if _, err := io.ReadFull(r, buf[8-lenlen:]); err != nil {
-		return 0, err
-	}
-
-	ui := binary.BigEndian.Uint64(buf)
-	return int(ui), nil
-}
-
-func tagWithBerStruct(v any, bst BerStructTag) (Tag, error) {
+func tagWithBerStruct(v any, st string) (Tag, error) {
 	t, err := defaultTag(v)
 	if err != nil {
-		return Tag{}, err
+		return t, err
+	}
+
+	bst, err := NewBerStructTag(st)
+	if err != nil {
+		return t, err
 	}
 
 	if bst.class != nil {
-		t.class = *bst.class
+		t.Class = *bst.class
 	}
 
-	if bst.tag != nil {
-		t.value = *bst.tag
+	if bst.cons != nil {
+		t.Construct = *bst.cons
+	}
+
+	if bst.val != nil {
+		t.Value = *bst.val
 	}
 
 	return t, nil
-}
-
-// seq is a pointer to an interface which is a struct containing only exported encodable values
-func encodeSequence(w io.Writer, seq any) (int, error) {
-	v := reflect.ValueOf(seq)
-	if v.Kind() != reflect.Struct {
-		return 0, fmt.Errorf("seq is not a struct: %q", v.Kind())
-	}
-
-	written := 0
-	for i := range v.NumField() {
-		f := v.Field(i)
-		logger.Printf("field %d (%s) is %s", i, v.Type().Field(i).Name, f.Type().Name())
-
-		bst, err := NewBerStructTag(v.Type().Field(i).Tag.Get("ber"))
-
-		if !f.CanInterface() {
-			return 0, fmt.Errorf("cannot get interface value for %q (field is probably unexported)", v.Type().Field(i).Name)
-		}
-
-		logger.Printf("field %d value is %v", i, f.Interface())
-
-		t, err := tagWithBerStruct(f.Interface(), bst)
-		if err != nil {
-			return written, err
-		}
-
-		n, err := encodeTlv(w, t, f.Interface())
-		written += n
-		if err != nil {
-			return written, err
-		}
-	}
-
-	return written, nil
-}
-
-// seq is a pointer to a bervalue struct
-func decodeSequence(r io.Reader, len int, seq any) error {
-	v := reflect.ValueOf(seq)
-	logger.Print(v.Kind())
-	if v.Kind() != reflect.Pointer || v.IsNil() {
-		return fmt.Errorf("seq is not a pointer or is nil")
-	}
-
-	elm := v.Elem()
-	logger.Print(elm.Kind())
-	if elm.Kind() != reflect.Struct {
-		return fmt.Errorf("seq %q does not point to a struct", elm.Kind())
-	}
-
-	// loop through all the fields of the struct, setting the zero
-	// value and then calling Decode for the field
-	for i := range elm.Type().NumField() {
-		f := elm.Field(i)
-		logger.Print(f.Kind())
-		logger.Print(f.Type().Name())
-
-		if f.Kind() == reflect.Pointer && f.CanInterface() {
-			if _, ok := f.Interface().(Choice); ok {
-				logger.Print("i is a choice")
-				f.Set(reflect.New(f.Type().Elem()))
-
-				c := f.Interface().(Choice)
-				if err := decodeWithChoice(r, c); err != nil {
-					return err
-				}
-				continue
-			}
-		}
-
-		bst, err := NewBerStructTag(elm.Type().Field(i).Tag.Get("ber"))
-		if err != nil {
-			return err
-		}
-
-		if !f.CanAddr() {
-			return fmt.Errorf("cannot addr %s (field probably unexported)", f.Type().Name())
-		}
-
-		i := f.Addr().Interface()
-
-		t, err := tagWithBerStruct(i, bst)
-		if err != nil {
-			return err
-		}
-
-		if err := DecodeWithTag(r, t, i); err != nil {
-			// TODO maybe wrap?
-			return err
-		}
-	}
-
-	return nil
-}
-
-func encodeChoice(w io.Writer, choice Choice) (int, error) {
-	t, ok := choice.Tag()
-	if !ok {
-		return 0, fmt.Errorf("not tag set for choice value")
-	}
-
-	i, err := choice.Choose(t)
-	if err != nil {
-		return 0, err
-	}
-
-	return encodeTlv(w, t, i)
-}
-
-func encodeContents(w io.Writer, contents any) (int, error) {
-	rc := reflect.ValueOf(contents)
-
-	logger.Printf("contents kind is: %q", rc.Kind())
-
-	// dereference all pointers
-	if rc.Kind() == reflect.Pointer {
-		rc = rc.Elem()
-		logger.Printf("contents is a pointer, dereferencing to %q", rc.Kind())
-	}
-
-	if !rc.CanInterface() {
-		return 0, fmt.Errorf("cannot get interface value for %s", rc.Kind())
-	}
-
-	v := rc.Interface()
-
-	switch rc.Kind() {
-	case reflect.Bool:
-		logger.Print("encoding bool")
-		return encodeBool(w, v.(bool))
-	case reflect.Int:
-		logger.Print("encoding int")
-		return encodeInt(w, v.(int))
-	case reflect.String:
-		logger.Print("encoding string")
-		return w.Write([]byte(v.(string)))
-	case reflect.Slice:
-		if b, ok := v.([]byte); ok {
-			logger.Print("encoding slice")
-			return w.Write(b)
-		}
-	case reflect.Struct:
-		logger.Print("encoding seq")
-		return encodeSequence(w, v)
-	}
-
-	return 0, fmt.Errorf("unknown encoding method for kind %s", rc.Kind())
-}
-
-func decodeContents(r io.Reader, len int, contents any) error {
-	v := reflect.ValueOf(contents)
-	if v.Kind() != reflect.Pointer || v.IsNil() {
-		return fmt.Errorf("contents is not a pointer or is nil %s", v.Kind())
-	}
-
-	switch v.Elem().Kind() {
-	case reflect.Bool:
-		b, err := decodeBool(r, len)
-		if err != nil {
-			return err
-		}
-		v.Elem().Set(reflect.ValueOf(b))
-
-	case reflect.Int:
-		i, err := decodeInt(r, len)
-		if err != nil {
-			return err
-		}
-		v.Elem().Set(reflect.ValueOf(i))
-
-	case reflect.String:
-		b, err := decodeOctetString(r, len)
-		if err != nil {
-			return err
-		}
-		v.Elem().Set(reflect.ValueOf(string(b)))
-
-	case reflect.Slice:
-		if v.Elem().Type().Elem().Kind() != reflect.Uint8 {
-			return fmt.Errorf("cannot decode slice type for []%s", v.Elem().Type().Elem().Kind())
-		}
-		b, err := decodeOctetString(r, len)
-		if err != nil {
-			return err
-		}
-		v.Elem().Set(reflect.ValueOf(b))
-
-	case reflect.Struct:
-		if err := decodeSequence(r, len, contents); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown decoding kind %q", v.Elem().Kind())
-	}
-
-	return nil
-}
-
-func encodeTlv(w io.Writer, tag Tag, contents any) (int, error) {
-	logger.Print(contents)
-
-	written := 0
-	n, err := encodeTag(w, tag)
-	written += n
-	if err != nil {
-		return written, err
-	}
-
-	if c, ok := contents.(Choice); ok {
-		logger.Print("dereferencing choice")
-		v, err := Chosen(c)
-		if err != nil {
-			return written, err
-		}
-		contents = v
-	}
-
-	var buf bytes.Buffer
-	contentsLen, err := encodeContents(&buf, contents)
-	if err != nil {
-		return written, err
-	}
-
-	n, err = encodeLen(w, contentsLen)
-	written += n
-	if err != nil {
-		return written, err
-	}
-
-	contentsWritten, err := io.Copy(w, &buf)
-	written += int(contentsWritten)
-
-	return written, err
-}
-
-func Encode(w io.Writer, v any) (int, error) {
-	tag, err := defaultTag(v)
-	if err != nil {
-		return 0, err
-	}
-
-	return encodeTlv(w, tag, v)
-}
-
-func decodeWithChoice(r io.Reader, c Choice) error {
-	dt, err := decodeTag(r)
-	if err != nil {
-		return err
-	}
-
-	v, err := c.Choose(dt)
-	if err != nil {
-		return err
-	}
-
-	len, err := decodeLen(r)
-	if err != nil {
-		return fmt.Errorf("error decoding len: %w", err)
-	}
-
-	return decodeContents(r, len, v)
-}
-
-func DecodeWithTag(r io.Reader, t Tag, v any) error {
-	dt, err := decodeTag(r)
-	if err != nil {
-		return fmt.Errorf("error decoding tag: %w", err)
-	}
-
-	logger.Print(dt)
-
-	if t.class != dt.class {
-		return fmt.Errorf("tag class 0x%X does not match decoded 0x%X", t.class, dt.class)
-	}
-
-	if t.construct != dt.construct {
-		return fmt.Errorf("tag construction 0x%X does not match decoded 0x%X", t.construct, dt.construct)
-	}
-
-	if t.value != dt.value {
-		return fmt.Errorf("tag value %d does not match decoded %d", t.value, dt.value)
-	}
-
-	len, err := decodeLen(r)
-	if err != nil {
-		return fmt.Errorf("error decoding len: %w", err)
-	}
-
-	return decodeContents(r, len, v)
-}
-
-func Decode(r io.Reader, v any) error {
-	def, err := defaultTag(v)
-	if err != nil {
-		return err
-	}
-
-	return DecodeWithTag(r, def, v)
 }

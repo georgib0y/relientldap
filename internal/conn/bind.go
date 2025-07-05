@@ -8,11 +8,7 @@ import (
 	"net"
 
 	m "github.com/georgib0y/relientldap/internal/model"
-	asn1 "github.com/go-asn1-ber/asn1-ber"
-)
-
-const (
-	SimpleAuthChoice asn1.Tag = 0
+	"github.com/georgib0y/relientldap/pkg/ber"
 )
 
 var (
@@ -20,39 +16,70 @@ var (
 )
 
 type BindRequest struct {
-	version      int64
-	name, simple string
+	Version int
+	Name    string
+	Auth    *BindReqChoice
 }
 
-func NewBindRequest(p *asn1.Packet) (BindRequest, error) {
-	if len(p.Children) != 3 {
-		logger.Printf("expected 3 children got %d", len(p.Children))
-		return BindRequest{}, InvalidPacket
+type SaslAuth struct {
+	Mechanism   string
+	Credentials []byte
+}
+
+var (
+	BrSimpleTag = ber.Tag{Class: ber.ContextSpecific, Construct: ber.Constructed, Value: 0}
+	BrSaslTag   = ber.Tag{Class: ber.ContextSpecific, Construct: ber.Constructed, Value: 3}
+	BindRespTag = ber.Tag{Class: ber.Application, Construct: ber.Constructed, Value: 1}
+)
+
+type BindReqChoice struct {
+	t      *ber.Tag
+	Simple string
+	Sasl   SaslAuth
+}
+
+func NewSimpleBindRequest(simple string) *BindReqChoice {
+	var br BindReqChoice
+	br.t = new(ber.Tag)
+	*br.t = BrSimpleTag
+	br.Simple = simple
+	return &br
+}
+
+func NewSaslBindRequest(mechanism string, credentials []byte) *BindReqChoice {
+	var br BindReqChoice
+	br.t = new(ber.Tag)
+	*br.t = BrSaslTag
+	br.Sasl = SaslAuth{mechanism, credentials}
+	return &br
+}
+
+func (b *BindReqChoice) Choose(t ber.Tag) (any, error) {
+	switch {
+	case t.Equals(BrSimpleTag):
+		b.t = new(ber.Tag)
+		*b.t = t
+		return &b.Simple, nil
+	case t.Equals(BrSaslTag):
+		b.t = new(ber.Tag)
+		*b.t = t
+		return &b.Sasl, nil
 	}
 
-	v, ok := p.Children[0].Value.(int64)
-	if !ok {
-		logger.Printf("version not an int")
-		return BindRequest{}, InvalidPacket
-	}
+	return nil, fmt.Errorf("unexpected tag for bind request choice")
+}
 
-	name, ok := p.Children[1].Value.(string)
-	if !ok {
-		logger.Printf("name not a string")
-		return BindRequest{}, InvalidPacket
+func (b *BindReqChoice) Tag() (ber.Tag, bool) {
+	if b.t == nil {
+		return ber.Tag{}, false
 	}
+	return *b.t, true
+}
 
-	authp := p.Children[2]
-	// TODO handle other auth methods
-	switch authp.Tag {
-	case SimpleAuthChoice:
-		// not sure why asn1 has no value in Value but does in the Data buffer
-		password := string(authp.Data.AvailableBuffer())
-		return BindRequest{v, name, password}, nil
-	default:
-		logger.Printf("unknown auth tag: %d", authp.Tag)
-		return BindRequest{}, UnsupportedAuthMethod
-	}
+type BindResponse struct {
+	ResultCode        ResultCode
+	MatchedDN         string
+	diagnosticMessage string
 }
 
 func getAuthenticatedContext(ctx context.Context, ds *DitScheduler, dn m.DN) (context.Context, error) {
@@ -79,17 +106,14 @@ func getAuthenticatedContext(ctx context.Context, ds *DitScheduler, dn m.DN) (co
 
 }
 
-func HandleBindRequest(ctx context.Context, conn net.Conn, ds *DitScheduler, p *asn1.Packet) (context.Context, error) {
+func HandleBindRequest(ctx context.Context, conn net.Conn, ds *DitScheduler, br BindRequest) (context.Context, error) {
 
-	br, err := NewBindRequest(p.Children[1])
+	dn, err := m.NormaliseDN(ds.s, br.Name)
 	if err != nil {
 		return ctx, err
 	}
 
-	dn, err := m.NormaliseDN(ds.s, br.name)
-	if err != nil {
-		return ctx, err
-	}
+	// TODO extract simple/sasl choice
 
 	newCtx, err := getAuthenticatedContext(ctx, ds, dn)
 	if err != nil {

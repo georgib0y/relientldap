@@ -122,51 +122,37 @@ func TestDecodeInt(t *testing.T) {
 	}
 }
 
-type LdapMsg struct {
-	MessageId int
-	Request   *LdapMsgChoice
-}
-
 var (
 	BindRequestTag = Tag{Application, Constructed, 0}
+	BrSimpleTag    = Tag{ContextSpecific, Constructed, 0}
+	BrSaslTag      = Tag{ContextSpecific, Constructed, 3}
 )
 
+type LdapMsg struct {
+	MessageId int
+	Request   *Choice[LdapMsgChoice]
+	Controls  *Optional[Control] `ber:"class=context-specific,cons=constructed,val=0"`
+}
+
+type Control struct {
+	ControlType  string
+	Criticality  bool
+	ControlValue string
+}
+
 type LdapMsgChoice struct {
-	t           *Tag
-	BindRequest BindRequest
-}
-
-func NewLdapBrMsgChoice(br BindRequest) *LdapMsgChoice {
-	var l LdapMsgChoice
-	l.t = new(Tag)
-	*l.t = BindRequestTag
-	l.BindRequest = br
-	return &l
-}
-
-func (l *LdapMsgChoice) Choose(t Tag) (any, error) {
-	switch t {
-	case BindRequestTag:
-		l.t = new(Tag)
-		*l.t = t
-		return &l.BindRequest, nil
-	}
-
-	return nil, fmt.Errorf("unexpected tag for ldap msg choice")
-}
-
-func (l *LdapMsgChoice) Tag() (Tag, bool) {
-	if l.t == nil {
-		return Tag{}, false
-	}
-
-	return *l.t, true
+	BindRequest BindRequest `ber:"class=context-specific,cons=constructed,val=0"`
 }
 
 type BindRequest struct {
 	Version int
 	Name    string
-	Auth    *BindReqChoice
+	Auth    *Choice[BindReqChoice]
+}
+
+type BindReqChoice struct {
+	Simple string   `ber:"class=context-specific,cons=constructed,val=0"`
+	Sasl   SaslAuth `ber:"class=context-specific,cons=constructed,val=3"`
 }
 
 type SaslAuth struct {
@@ -174,63 +160,20 @@ type SaslAuth struct {
 	Credentials []byte
 }
 
-var (
-	BrSimpleTag = Tag{ContextSpecific, Constructed, 0}
-	BrSaslTag   = Tag{ContextSpecific, Constructed, 3}
-)
-
-type BindReqChoice struct {
-	t      *Tag
-	Simple string
-	Sasl   SaslAuth
-}
-
-func NewSimpleBindRequest(simple string) *BindReqChoice {
-	var br BindReqChoice
-	br.t = new(Tag)
-	*br.t = BrSimpleTag
-	br.Simple = simple
-	return &br
-}
-
-func NewSaslBindRequest(mechanism string, credentials []byte) *BindReqChoice {
-	var br BindReqChoice
-	br.t = new(Tag)
-	*br.t = BrSaslTag
-	br.Sasl = SaslAuth{mechanism, credentials}
-	return &br
-}
-
-func (b *BindReqChoice) Choose(t Tag) (any, error) {
-	switch {
-	case t.Equals(BrSimpleTag):
-		b.t = new(Tag)
-		*b.t = t
-		return &b.Simple, nil
-	case t.Equals(BrSaslTag):
-		b.t = new(Tag)
-		*b.t = t
-		return &b.Sasl, nil
-	}
-
-	return nil, fmt.Errorf("unexpected tag for bind request choice")
-}
-
-func (b *BindReqChoice) Tag() (Tag, bool) {
-	if b.t == nil {
-		return Tag{}, false
-	}
-	return *b.t, true
-}
-
 func TestEncodeBindRequestSimple(t *testing.T) {
-	ldapChoice := NewLdapBrMsgChoice(BindRequest{
-		Version: 3,
-		Name:    "test",
-		Auth:    NewSimpleBindRequest("123"),
-	})
+	auth, err := NewChosen[BindReqChoice](BrSimpleTag, "123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	br, err := NewChosen[LdapMsgChoice](
+		BindRequestTag,
+		BindRequest{Version: 3, Name: "test", Auth: auth},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	br := LdapMsg{MessageId: 1, Request: ldapChoice}
+	msg := LdapMsg{MessageId: 1, Request: br}
 
 	exp := []byte{
 		0x30, 0x13, //ldapmsg tag/len
@@ -242,7 +185,7 @@ func TestEncodeBindRequestSimple(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if _, err := Encode(&buf, &br); err != nil {
+	if _, err := Encode(&buf, &msg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -269,40 +212,134 @@ func TestDecodeBindRequestSimple(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	exp := LdapMsg{
-		MessageId: 1,
-		Request: NewLdapBrMsgChoice(BindRequest{
-			Version: 3,
-			Name:    "test",
-			Auth:    NewSimpleBindRequest("123"),
-		}),
+	authexp, err := NewChosen[BindReqChoice](BrSimpleTag, "123")
+	if err != nil {
+		t.Fatal(err)
 	}
+	brexp, err := NewChosen[LdapMsgChoice](BindRequestTag, BindRequest{Version: 3, Name: "test", Auth: authexp})
+	exp := LdapMsg{MessageId: 1, Request: brexp}
 
 	if br.MessageId != exp.MessageId {
 		t.Fatalf("decoded msgid %d not eq to exp %d", br.MessageId, exp.MessageId)
 	}
 
-	brReq := br.Request.BindRequest
-	expReq := exp.Request.BindRequest
+	brReq := br.Request.Choices.BindRequest
+	expReq := exp.Request.Choices.BindRequest
 	switch {
 	case brReq.Version != expReq.Version:
 		t.Fatalf("decoded version %d not eq to exp %d", brReq.Version, expReq.Version)
 	case !reflect.DeepEqual(brReq.Name, expReq.Name):
 		t.Fatalf("decoded name %s not eq to exp %s", string(brReq.Name), string(expReq.Name))
-	case !reflect.DeepEqual(brReq.Auth.Simple, expReq.Auth.Simple):
-		t.Fatalf("decoded simple %s not eq to exp %s", string(brReq.Auth.Simple), string(expReq.Auth.Simple))
+	case !reflect.DeepEqual(brReq.Auth.Choices.Simple, expReq.Auth.Choices.Simple):
+		t.Fatalf("decoded simple %s not eq to exp %s", string(brReq.Auth.Choices.Simple), string(expReq.Auth.Choices.Simple))
+	}
+}
+
+func TestEncodeBindRequestSimpleWithControls(t *testing.T) {
+	auth, err := NewChosen[BindReqChoice](BrSimpleTag, "123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	br, err := NewChosen[LdapMsgChoice](
+		BindRequestTag,
+		BindRequest{Version: 3, Name: "test", Auth: auth},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg := LdapMsg{MessageId: 1, Request: br, Controls: NewOptional(Control{
+		ControlType:  "type",
+		Criticality:  true,
+		ControlValue: "val",
+	})}
+
+	exp := []byte{
+		0x30, 0x23, //ldapmsg tag/len
+		0x02, 0x01, 0x01, //msgid: 1
+		0x60, 0x0E, // bind req tag/len
+		0x02, 0x01, 0x03, // version: 3
+		0x04, 0x04, 0x74, 0x65, 0x73, 0x74, // name: "test"
+		ContextSpecific | Constructed, 0x03, 0x31, 0x32, 0x33, // cred: "123"
+		ContextSpecific | Constructed, 0x0E, // controls tag/len
+		0x04, 0x04, 0x74, 0x79, 0x70, 0x65, // control type "type"
+		0x01, 0x01, 0xFF, // criticality "true"
+		0x04, 0x03, 0x76, 0x61, 0x6C, // control value "val"
+	}
+
+	var buf bytes.Buffer
+	if _, err := Encode(&buf, &msg); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(buf.Bytes(), exp) {
+		t.Fatalf("encoding:\n%s\ndid not match expected:\n%s\n", bytesAsHex(buf.Bytes()), bytesAsHex(exp))
+	}
+}
+
+func TestDecodeBindRequestSimpleWithControls(t *testing.T) {
+	var br LdapMsg
+
+	b := []byte{
+		0x30, 0x23, //ldapmsg tag/len
+		0x02, 0x01, 0x01, //msgid: 1
+		0x60, 0x0E, // bind req tag/len
+		0x02, 0x01, 0x03, // version: 3
+		0x04, 0x04, 0x74, 0x65, 0x73, 0x74, // name: "test"
+		ContextSpecific | Constructed, 0x03, 0x31, 0x32, 0x33, // cred: "123"
+		ContextSpecific | Constructed, 0x0E, // controls tag/len
+		0x04, 0x04, 0x74, 0x79, 0x70, 0x65, // control type "type"
+		0x01, 0x01, 0xFF, // criticality "true"
+		0x04, 0x03, 0x76, 0x61, 0x6C, // control value "val"
+	}
+
+	buf := bytes.NewBuffer(b)
+
+	if err := Decode(buf, &br); err != nil {
+		t.Fatal(err)
+	}
+
+	authexp, err := NewChosen[BindReqChoice](BrSimpleTag, "123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	brexp, err := NewChosen[LdapMsgChoice](BindRequestTag, BindRequest{Version: 3, Name: "test", Auth: authexp})
+	exp := LdapMsg{MessageId: 1, Request: brexp, Controls: NewOptional(Control{
+		ControlType:  "type",
+		Criticality:  true,
+		ControlValue: "val",
+	})}
+
+	if br.MessageId != exp.MessageId {
+		t.Fatalf("decoded msgid %d not eq to exp %d", br.MessageId, exp.MessageId)
+	}
+
+	brReq := br.Request.Choices.BindRequest
+	expReq := exp.Request.Choices.BindRequest
+	switch {
+	case brReq.Version != expReq.Version:
+		t.Fatalf("decoded version %d not eq to exp %d", brReq.Version, expReq.Version)
+	case !reflect.DeepEqual(brReq.Name, expReq.Name):
+		t.Fatalf("decoded name %s not eq to exp %s", string(brReq.Name), string(expReq.Name))
+	case !reflect.DeepEqual(brReq.Auth.Choices.Simple, expReq.Auth.Choices.Simple):
+		t.Fatalf("decoded simple %s not eq to exp %s", string(brReq.Auth.Choices.Simple), string(expReq.Auth.Choices.Simple))
 	}
 }
 
 func TestEncodeBindRequestSasl(t *testing.T) {
-	br := LdapMsg{
-		MessageId: 1,
-		Request: NewLdapBrMsgChoice(BindRequest{
-			Version: 3,
-			Name:    "test",
-			Auth:    NewSaslBindRequest("m", []byte("123")),
-		}),
+	auth, err := NewChosen[BindReqChoice](BrSaslTag, SaslAuth{Mechanism: "m", Credentials: []byte("123")})
+	if err != nil {
+		t.Fatal(err)
 	}
+	br, err := NewChosen[LdapMsgChoice](
+		BindRequestTag,
+		BindRequest{Version: 3, Name: "test", Auth: auth},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg := LdapMsg{MessageId: 1, Request: br}
 
 	exp := []byte{
 		0x30, 0x18, //ldapmsg tag/len
@@ -316,8 +353,7 @@ func TestEncodeBindRequestSasl(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	_, err := Encode(&buf, &br)
-	if err != nil {
+	if _, err = Encode(&buf, &msg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -347,19 +383,17 @@ func TestDecodeBindRequestSasl(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	exp := LdapMsg{
-		MessageId: 1,
-		Request: NewLdapBrMsgChoice(BindRequest{
-			Version: 3,
-			Name:    "test",
-			Auth:    NewSaslBindRequest("m", []byte("123")),
-		}),
+	authexp, err := NewChosen[BindReqChoice](BrSaslTag, SaslAuth{Mechanism: "m", Credentials: []byte("123")})
+	if err != nil {
+		t.Fatal(err)
 	}
+	brexp, err := NewChosen[LdapMsgChoice](BindRequestTag, BindRequest{Version: 3, Name: "test", Auth: authexp})
+	exp := LdapMsg{MessageId: 1, Request: brexp}
 
-	brReq := br.Request.BindRequest
-	expReq := exp.Request.BindRequest
-	brSasl := brReq.Auth.Sasl
-	expSasl := brReq.Auth.Sasl
+	brReq := br.Request.Choices.BindRequest
+	expReq := exp.Request.Choices.BindRequest
+	brSasl := brReq.Auth.Choices.Sasl
+	expSasl := brReq.Auth.Choices.Sasl
 
 	switch {
 	case brReq.Version != expReq.Version:

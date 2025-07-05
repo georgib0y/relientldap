@@ -8,11 +8,6 @@ import (
 	"os"
 
 	m "github.com/georgib0y/relientldap/internal/model"
-	asn1 "github.com/go-asn1-ber/asn1-ber"
-)
-
-const (
-	BindRequestTag asn1.Tag = 0
 )
 
 type ContextKey int
@@ -114,27 +109,27 @@ func (m *Mux) Serve(c net.Conn) {
 // TODO implement control parssing
 type Control = struct{}
 
-func msgIdAndControls(p *asn1.Packet) (int64, []Control, error) {
-	if len(p.Children) < 2 {
-		logger.Println("expected message envelope to have at least 2 children, got %d", len(p.Children))
-		return 0, []Control{}, InvalidPacket
-	}
+// func msgIdAndControls(p *asn1.Packet) (int64, []Control, error) {
+// 	if len(p.Children) < 2 {
+// 		logger.Println("expected message envelope to have at least 2 children, got %d", len(p.Children))
+// 		return 0, []Control{}, InvalidPacket
+// 	}
 
-	msgId, ok := p.Children[0].Value.(int64)
-	if !ok {
-		logger.Println("message id not an int")
-		return 0, []Control{}, InvalidPacket
-	}
+// 	msgId, ok := p.Children[0].Value.(int64)
+// 	if !ok {
+// 		logger.Println("message id not an int")
+// 		return 0, []Control{}, InvalidPacket
+// 	}
 
-	// TODO controls
-	if len(p.Children) > 2 {
-		logger.Println("message env likely has controls, but they aren't implemented yet")
-	}
+// 	// TODO controls
+// 	if len(p.Children) > 2 {
+// 		logger.Println("message env likely has controls, but they aren't implemented yet")
+// 	}
 
-	return msgId, []Control{}, nil
-}
+// 	return msgId, []Control{}, nil
+// }
 
-type ResultCode int32
+type ResultCode int
 
 const (
 	Success ResultCode = iota
@@ -142,43 +137,43 @@ const (
 
 type ResponseTag uint32
 
-const (
-	BindResponse ResponseTag = 1
-)
+// const (
+// 	BindResponse ResponseTag = 1
+// )
 
-func NewResponsePacket(tag ResponseTag) *asn1.Packet {
-	return asn1.Encode(
-		asn1.ClassApplication,
-		asn1.TypeConstructed,
-		asn1.Tag(tag),
-		nil,
-		"Response",
-	)
-}
+// func NewResponsePacket(tag ResponseTag) *asn1.Packet {
+// 	return asn1.Encode(
+// 		asn1.ClassApplication,
+// 		asn1.TypeConstructed,
+// 		asn1.Tag(tag),
+// 		nil,
+// 		"Response",
+// 	)
+// }
 
-// TODO referral
-func PutLdapResult(p *asn1.Packet, code ResultCode, matchedDn string, diagnostic string) {
-	p.AppendChild(asn1.NewInteger(
-		asn1.ClassUniversal,
-		asn1.TypePrimitive,
-		asn1.TagEnumerated,
-		code,
-		"ResultCode",
-	))
+// // TODO referral
+// func PutLdapResult(p *asn1.Packet, code ResultCode, matchedDn string, diagnostic string) {
+// 	p.AppendChild(asn1.NewInteger(
+// 		asn1.ClassUniversal,
+// 		asn1.TypePrimitive,
+// 		asn1.TagEnumerated,
+// 		code,
+// 		"ResultCode",
+// 	))
 
-	p.AppendChild(asn1.NewString(
-		asn1.ClassUniversal,
-		asn1.TypePrimitive,
-		asn1.TagOctetString,
-		matchedDn,
-		"MatchedDN",
-	))
+// 	p.AppendChild(asn1.NewString(
+// 		asn1.ClassUniversal,
+// 		asn1.TypePrimitive,
+// 		asn1.TagOctetString,
+// 		matchedDn,
+// 		"MatchedDN",
+// 	))
 
-	p.AppendChild(asn1.NewString(
-		asn1.ClassUniversal,
-		asn1.TypePrimitive,
-		asn1.TagOctetString,
-		diagnostic,
-		"DiagnosticMessage",
-	))
-}
+// 	p.AppendChild(asn1.NewString(
+// 		asn1.ClassUniversal,
+// 		asn1.TypePrimitive,
+// 		asn1.TagOctetString,
+// 		diagnostic,
+// 		"DiagnosticMessage",
+// 	))
+// }
