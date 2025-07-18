@@ -5,9 +5,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/georgib0y/relientldap/internal/conn"
+	d "github.com/georgib0y/relientldap/internal/domain"
 	"github.com/georgib0y/relientldap/internal/ldif"
-	m "github.com/georgib0y/relientldap/internal/model"
+	"github.com/georgib0y/relientldap/internal/server"
 )
 
 var logger = log.New(os.Stderr, "main: ", log.Lshortfile)
@@ -17,7 +17,7 @@ type Config struct {
 	objectClassLdifPath string
 }
 
-func loadAttrs(path string) (map[m.OID]*m.Attribute, error) {
+func loadAttrs(path string) (map[d.OID]*d.Attribute, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func loadAttrs(path string) (map[m.OID]*m.Attribute, error) {
 	return ldif.ParseReader(f, p)
 }
 
-func loadObjClasses(path string, attrs map[m.OID]*m.Attribute) (map[m.OID]*m.ObjectClass, error) {
+func loadObjClasses(path string, attrs map[d.OID]*d.Attribute) (map[d.OID]*d.ObjectClass, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -50,6 +50,7 @@ func loadObjClasses(path string, attrs map[m.OID]*m.Attribute) (map[m.OID]*m.Obj
 }
 
 func main() {
+	// TODO remove hardcoded config
 	config := Config{
 		attributeLdifPath:   "ldif/attributes.ldif",
 		objectClassLdifPath: "ldif/objClasses.ldif",
@@ -60,25 +61,37 @@ func main() {
 		logger.Fatalf("could not load attributes: %s", err)
 	}
 
+	logger.Print("loaded attrs")
+
 	objClasses, err := loadObjClasses(config.objectClassLdifPath, attrs)
 	if err != nil {
 		logger.Fatalf("could not load object classes: %s", err)
 	}
 
-	schema := m.NewSchema(attrs, objClasses)
-	dit := m.GenerateTestDIT(schema)
+	logger.Print("loaded object classes")
 
-	scheduler := conn.NewDitScheduler(dit, schema)
+	schema := d.NewSchema(attrs, objClasses)
+	dit := d.GenerateTestDIT(schema)
+
+	logger.Print("generated schema and test dit")
+
+	scheduler := server.NewScheduler(dit, schema)
 	go scheduler.Run()
 
-	mux := conn.NewMux(scheduler)
-	mux.AddHandler(conn.BindRequestTag, conn.HandleBindRequest)
+	logger.Print("running scheduler in other goroutine")
+
+	mux := server.NewMux(scheduler)
+	mux.AddHandler(server.BindRequestTag, server.HandleBindRequest)
+	mux.AddHandler(server.UnbindRequestTag, server.HandleUnbindRequest)
+
+	logger.Print("added handlers to mux")
 
 	l, err := net.Listen("tcp", ":8000")
 	if err != nil {
 		logger.Fatal(err)
 	}
 
+	logger.Print("created new listner, listening...")
 	for {
 		c, err := l.Accept()
 		if err != nil {
@@ -86,6 +99,7 @@ func main() {
 		}
 
 		go mux.Serve(c)
+		logger.Print("accepted connection, serving...")
 	}
 
 }

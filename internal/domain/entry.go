@@ -103,7 +103,11 @@ func (e *Entry) ContainsAttrVal(attr *Attribute, val string) (bool, error) {
 	matched := false
 	var undefined error
 	for v := range a {
-		m, err := attr.EqRule().Match(val, v)
+		eq, ok := attr.EqRule()
+		if !ok {
+			return false, fmt.Errorf("attr %s does not have an eq rule", attr.Oid())
+		}
+		m, err := eq.Match(val, v)
 		if err != nil {
 			if errors.Is(err, UndefinedMatch) {
 				undefined = err
@@ -185,16 +189,21 @@ func (e *Entry) SetRDN(rdn RDN, deleteOld bool) error {
 	return nil
 }
 
-func (e *Entry) MatchesRdn(rdn RDN) bool {
+func (e *Entry) MatchesRdn(rdn RDN) (bool, error) {
 	for attr, val := range rdn.avas {
 		contains, err := e.ContainsAttrVal(attr, val)
+		if errors.Is(err, UndefinedMatch) {
+			return false, nil
+		} else if err != nil {
+			return false, err
+		}
 
-		if !contains || err != nil {
-			return false
+		if !contains {
+			return false, nil
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 type ChangeOperation func(*Entry) error

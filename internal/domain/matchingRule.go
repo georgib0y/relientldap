@@ -38,124 +38,107 @@ func (m MatchingRule) Match(v1, v2 string) (bool, error) {
 	return m.match(v1, v2)
 }
 
-var (
-	bitString = MatchingRule{
+var matchingRules = map[string]MatchingRule{
+	"bitStringMatch": MatchingRule{
 		numericoid: "2.5.13.16",
 		name:       "bitStringMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.6",
 		match:      bitStringMatch,
-	}
-	caseIgnoreIA5 = MatchingRule{
+	},
+	"caseIgnoreIA5Match": MatchingRule{
 		numericoid: "1.3.6.1.4.1.1466.109.114.2",
 		name:       "caseIgnoreIA5Match",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.26",
-		match:      unimplementedMatch,
-	}
-	caseIgnoreIA5Substrings = MatchingRule{
+		match:      caseIgnoreMatch,
+	},
+	"caseIgnoreIA5SubstringsMatch": MatchingRule{
 		numericoid: "1.3.6.1.4.1.1466.109.114.3",
 		name:       "caseIgnoreIA5SubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
 		match:      unimplementedMatch,
-	}
-	caseIgnoreList = MatchingRule{
+	},
+	"caseIgnoreListMatch": MatchingRule{
 		numericoid: "2.5.13.11",
 		name:       "caseIgnoreListMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.41",
 		match:      unimplementedMatch,
-	}
-	caseIgnoreListSubstrings = MatchingRule{
+	},
+	"caseIgnoreListSubstringsMatch": MatchingRule{
 		numericoid: "2.5.13.12",
 		name:       "caseIgnoreListSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
 		match:      unimplementedMatch,
-	}
-	caseIgnore = MatchingRule{
+	},
+	"caseIgnoreMatch": MatchingRule{
 		numericoid: "2.5.13.2",
 		name:       "caseIgnoreMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.15",
 		match:      caseIgnoreMatch,
-	}
-	caseIgnoreSubstrings = MatchingRule{
+	},
+	"caseIgnoreSubstringsMatch": MatchingRule{
 		numericoid: "2.5.13.4",
 		name:       "caseIgnoreSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
 		match:      unimplementedMatch,
-	}
-	caseIgnoreOrdering = MatchingRule{
+	},
+	"caseIgnoreOrderingMatch": MatchingRule{
 		numericoid: "2.5.13.3",
 		name:       "caseIgnoreOrderingMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.15",
 		match:      unimplementedMatch,
-	}
-	distinguishedName = MatchingRule{
+	},
+	"distinguishedNameMatch": MatchingRule{
 		numericoid: "2.5.13.1",
 		name:       "distinguishedNameMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.12",
 		match:      unimplementedMatch,
-	}
-	numericString = MatchingRule{
+	},
+	"numericStringMatch": MatchingRule{
 		numericoid: "2.5.13.8",
 		name:       "numericStringMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.36",
 		match:      unimplementedMatch,
-	}
-	numericStringSubstrings = MatchingRule{
+	},
+	"numericStringSubstringsMatch": MatchingRule{
 		numericoid: "2.5.13.10",
 		name:       "numericStringSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
 		match:      unimplementedMatch,
-	}
-	octetString = MatchingRule{
+	},
+	"octetStringMatch": MatchingRule{
 		numericoid: "2.5.13.17",
 		name:       "octetStringMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.40",
 		match:      unimplementedMatch,
-	}
-	telephoneNumber = MatchingRule{
+	},
+	"telephoneNumberMatch": MatchingRule{
 		numericoid: "2.5.13.20",
 		name:       "telephoneNumberMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.50",
 		match:      unimplementedMatch,
-	}
-	telephoneNumberSubstrings = MatchingRule{
+	},
+	"telephoneNumberSubstringsMatch": MatchingRule{
 		numericoid: "2.5.13.21",
 		name:       "telephoneNumberSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
 		match:      unimplementedMatch,
-	}
-	uniqueMember = MatchingRule{
+	},
+	"uniqueMemberMatch": MatchingRule{
 		numericoid: "2.5.13.23",
 		name:       "uniqueMemberMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.34",
 		match:      unimplementedMatch,
-	}
-)
-
-var matchingRules []*MatchingRule = []*MatchingRule{
-	&bitString,
-	&caseIgnoreIA5,
-	&caseIgnoreIA5Substrings,
-	&caseIgnoreList,
-	&caseIgnoreListSubstrings,
-	&caseIgnore,
-	&caseIgnoreSubstrings,
-	&caseIgnoreOrdering,
-	&distinguishedName,
-	&numericString,
-	&numericStringSubstrings,
-	&octetString,
-	&telephoneNumber,
-	&telephoneNumberSubstrings,
-	&uniqueMember,
+	},
 }
 
 func GetMatchingRule(nameOrOid string) (*MatchingRule, bool) {
+	if mr, ok := matchingRules[nameOrOid]; ok {
+		return &mr, true
+	}
+
 	for _, mr := range matchingRules {
 		if mr.numericoid == OID(nameOrOid) {
-			return mr, true
-		}
-		if mr.name == nameOrOid {
-			return mr, true
+			return &mr, true
 		}
 	}
 
@@ -163,22 +146,17 @@ func GetMatchingRule(nameOrOid string) (*MatchingRule, bool) {
 }
 
 // For usage in tests where the name or oid is known, panics if the
-// name/oid is not known, use GetMatchingRule elsewhere
+// name/oid is not known to be good, use GetMatchingRule elsewhere
 func GetMatchingRuleUnchecked(nameOrOid string) *MatchingRule {
-	for _, mr := range matchingRules {
-		if mr.numericoid == OID(nameOrOid) {
-			return mr
-		}
-		if mr.name == nameOrOid {
-			return mr
-		}
+	mr, ok := GetMatchingRule(nameOrOid)
+	if !ok {
+		log.Panicf("unknown matching rule name/oid: %s", nameOrOid)
 	}
-
-	log.Panicf("unknown matching rule name/oid: %s", nameOrOid)
-	return nil
+	return mr
 }
 
 func unimplementedMatch(s1, s2 string) (bool, error) {
+	logger.Print("matching rule is unimplemented")
 	return false, UnimplementedMatchingRule
 }
 
@@ -186,6 +164,7 @@ func bitStringMatch(s1, s2 string) (bool, error) {
 	return s1 == s2, nil
 }
 
+// TODO insignificant space handling
 func caseIgnoreMatch(s1, s2 string) (bool, error) {
 	return strings.ToLower(s1) == strings.ToLower(s2), nil
 }

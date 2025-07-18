@@ -45,8 +45,12 @@ func NewEqualityFilter(target *Attribute, matchVal string) Filter {
 		}
 
 		for val := range vals {
+			eq, ok := target.EqRule()
+			if !ok {
+				continue
+			}
 			// TODO handling undefined?
-			if ok, err := target.EqRule().Match(val, matchVal); ok && err == nil {
+			if ok, err := eq.Match(val, matchVal); ok && err == nil {
 				return true
 			}
 		}

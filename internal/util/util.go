@@ -1,8 +1,10 @@
 package util
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"strings"
 )
 
 var logger = log.New(os.Stderr, "util: ", log.Lshortfile)
@@ -40,4 +42,30 @@ func CmpMapKeys[K comparable, V any](m1, m2 map[K]V) bool {
 	}
 
 	return true
+}
+
+func BytesAsHex(b []byte) string {
+	var sb strings.Builder
+
+	sb.WriteString("{ ")
+	for _, v := range b {
+		fmt.Fprintf(&sb, "0x%02x, ", v)
+	}
+	sb.WriteString("}")
+
+	return sb.String()
+}
+
+type HexLogger struct {
+	l      *log.Logger
+	prefix string
+}
+
+func NewHexLogger(l *log.Logger, prefix string) *HexLogger {
+	return &HexLogger{l, prefix}
+}
+
+func (h *HexLogger) Write(p []byte) (int, error) {
+	h.l.Printf("%s: %s", h.prefix, BytesAsHex(p))
+	return len(p), nil
 }

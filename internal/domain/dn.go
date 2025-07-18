@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -62,7 +63,13 @@ func CompareRDNs(r1, r2 *RDN) bool {
 			return false
 		}
 
-		if ok, err := attr.EqRule().Match(val1, val2); !ok || err != nil {
+		eq, ok := attr.EqRule()
+		if !ok {
+			logger.Printf("attribute %s does not have an eq rule", attr)
+			return false
+		}
+
+		if ok, err := eq.Match(val1, val2); !ok || err != nil {
 			return false
 		}
 	}
@@ -195,8 +202,10 @@ func attrValFromStr(schema *Schema, s string) (*Attribute, string, error) {
 // TODO this is definitely not a complete DN parser, though probs good enough for now
 func NormaliseDN(schema *Schema, s string) (DN, error) {
 	b := NewDnBuilder()
+	rdns := strings.Split(s, ",")
+	slices.Reverse(rdns)
 
-	for _, spl := range strings.Split(s, ",") {
+	for _, spl := range rdns {
 		avas := strings.Split(spl, "+")
 		a, v, err := attrValFromStr(schema, avas[0])
 		if err != nil {

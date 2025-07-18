@@ -48,6 +48,7 @@ func NewDIT(root *DITNode) *DIT {
 }
 
 func (d *DIT) GetEntry(dn DN) (*Entry, error) {
+	logger.Printf("getting entry: %s", dn)
 	node, err := d.getNode(dn)
 	if err != nil {
 		return nil, err
@@ -154,7 +155,7 @@ func (d *DIT) getNode(dn DN) (*DITNode, error) {
 
 	var nfErr *NodeNotFoundError
 	if errors.As(err, &nfErr) {
-		nfErr.requestedDN = dn
+		nfErr.RequestedDN = dn
 		return nil, nfErr
 	} else if err != nil {
 		return nil, err
@@ -164,7 +165,14 @@ func (d *DIT) getNode(dn DN) (*DITNode, error) {
 }
 
 func getNodeRecursive(rdns []RDN, node *DITNode) (*DITNode, error) {
-	if !node.entry.MatchesRdn(rdns[0]) {
+	logger.Printf("getting node at: %s", rdns[0])
+	matches, err := node.entry.MatchesRdn(rdns[0])
+	if err != nil {
+		return nil, err
+	}
+
+	if !matches {
+		logger.Printf("rdn %s did not match entry: %s", rdns[0], node.entry)
 		return nil, &NodeNotFoundError{}
 	}
 

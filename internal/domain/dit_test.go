@@ -72,12 +72,12 @@ func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 		t.Fatalf("Expected not found erro, got %s", err)
 	}
 
-	if !CompareDNs(dn, nfErr.requestedDN) {
-		t.Errorf("DN (%s) and requested DN (%s) do not match", dn, nfErr.requestedDN)
+	if !CompareDNs(dn, nfErr.RequestedDN) {
+		t.Errorf("DN (%s) and requested DN (%s) do not match", dn, nfErr.RequestedDN)
 	}
 
-	if !reflect.DeepEqual(expectedMatchedDn, nfErr.matchedDn) {
-		t.Errorf("Expected matched DN (%s) and nfErr matchedDN (%s) do not match", expectedMatchedDn, nfErr.matchedDn)
+	if !reflect.DeepEqual(expectedMatchedDn, nfErr.MatchedDN) {
+		t.Errorf("Expected matched DN (%s) and nfErr matchedDN (%s) do not match", expectedMatchedDn, nfErr.MatchedDN)
 	}
 }
 

@@ -98,12 +98,27 @@ func encodeStruct(w io.Writer, s any) (int, error) {
 		return 0, fmt.Errorf("encoding interface is not a struct: %q", v.Kind())
 	}
 
+	logger.Printf("struct %s has %d fields", v.Type(), v.NumField())
+
 	written := 0
+
 	for i := range v.NumField() {
 		f := v.Field(i)
+		ft := v.Type().Field(i)
+		logger.Printf("struct field is: %s", ft.Name)
 
 		if !f.CanInterface() {
-			return written, fmt.Errorf("cannot get value for %q, field may be unexported", v.Type().Field(i).Name)
+			return written, fmt.Errorf("cannot get value for %q, field may be unexported", ft.Name)
+		}
+
+		if o, ok := f.Interface().(optional); ok {
+			logger.Print("field is an optional")
+			val, some := o.getAny()
+			if !some {
+				continue
+			}
+			// calling elem to get what the pointer points to
+			f = reflect.ValueOf(val).Elem()
 		}
 
 		st := v.Type().Field(i).Tag.Get("ber")
@@ -150,7 +165,10 @@ func encodeContents(w io.Writer, contents any) (int, error) {
 		return encodeBool(w, v.(bool))
 	case reflect.Int:
 		logger.Print("encoding int")
-		return encodeInt(w, v.(int))
+		// have to fetch the int instead of type asserting to extract
+		// the int from ResultCode and similar
+		iv := rc.Int()
+		return encodeInt(w, int(iv))
 	case reflect.String:
 		logger.Print("encoding string")
 		return w.Write([]byte(v.(string)))
@@ -169,22 +187,27 @@ func encodeContents(w io.Writer, contents any) (int, error) {
 
 func encodeTlv(w io.Writer, tag Tag, contents any) (int, error) {
 	if c, ok := contents.(choice); ok {
-		t, v, ok := c.chosen()
+		t, v, ok := c.Chosen()
 		if !ok {
 			return 0, fmt.Errorf("choice is empty")
 		}
 		tag = t
 		contents = v
 	}
+	logger.Print("contents not a choice")
 
+	rc := reflect.ValueOf(contents)
+	logger.Printf("rc type is: %s", rc.Type())
 	if o, ok := contents.(optional); ok {
-		v, ok := o.getAny()
-		if !ok {
+		logger.Print("contents is an optional")
+		v, some := o.getAny()
+		if !some {
 			return 0, nil
 		}
 
 		contents = v
 	}
+	logger.Print("contents not an option")
 
 	written := 0
 	n, err := encodeTag(w, tag)
@@ -205,7 +228,7 @@ func encodeTlv(w io.Writer, tag Tag, contents any) (int, error) {
 		return written, err
 	}
 
-	contentsWritten, err := io.Copy(w, &buf)
+	contentsWritten, err := w.Write(buf.Bytes())
 	written += int(contentsWritten)
 
 	return written, err

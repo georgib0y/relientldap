@@ -12,6 +12,10 @@ import (
 
 var logger = log.New(os.Stderr, "ber: ", log.Lshortfile)
 
+func init() {
+	// logger.SetOutput(io.Discard)
+}
+
 const (
 	BoolUniversalTagVal  int = 0x01
 	IntUniversalTagVal       = 0x02
@@ -123,7 +127,7 @@ func (t Tag) Equals(o Tag) bool {
 func defaultTag(v any) (Tag, error) {
 	// try and get underlying value of choice
 	if c, ok := v.(choice); ok {
-		t, _, ok := c.chosen()
+		t, _, ok := c.Chosen()
 		if !ok {
 			logger.Print("no choice tag")
 			return Tag{}, fmt.Errorf("tag has not been set for choice")
@@ -177,8 +181,8 @@ func defaultTag(v any) (Tag, error) {
 }
 
 type choice interface {
-	choose(t Tag) (any, error)
-	chosen() (Tag, any, bool)
+	Choose(t Tag) (any, error)
+	Chosen() (Tag, any, bool)
 }
 
 // TODO maybe make a type alias for a pointer to choice?
@@ -192,12 +196,13 @@ func NewChoice[T any]() *Choice[T] {
 	return &Choice[T]{}
 }
 
-func NewChosen[T any, V any](t Tag, v V) (*Choice[T], error) {
+// Creates a new choice with value v, panics if tag and value are not supported by the choice type T
+func NewChosen[T any, V any](t Tag, v V) *Choice[T] {
 	var c Choice[T]
 
-	chosen, err := c.choose(t)
+	chosen, err := c.Choose(t)
 	if err != nil {
-		return &c, err
+		logger.Panic(err)
 	}
 
 	// need to call Elem() twice here, becuase choose returns a pointer to c.Val, which is an interface{}
@@ -208,17 +213,17 @@ func NewChosen[T any, V any](t Tag, v V) (*Choice[T], error) {
 
 	cptr, ok := chosen.(*V)
 	if !ok {
-		return &c, fmt.Errorf("chosen %q is not a pointer to value's type %q", reflect.TypeOf(chosen), reflect.TypeOf(v))
+		logger.Panicf("chosen %q is not a pointer to value's type %q", reflect.TypeOf(chosen), reflect.TypeOf(v))
 	}
 
 	*cptr = v
 
 	logger.Printf("new chosen's value is: %s", c.Val)
-	return &c, nil
+	return &c
 }
 
 // returns a pointer to the value chosen by tag
-func (c *Choice[T]) choose(t Tag) (any, error) {
+func (c *Choice[T]) Choose(t Tag) (any, error) {
 	v := reflect.ValueOf(&c.Choices).Elem()
 
 	// TODO interface nullability??
@@ -253,6 +258,7 @@ func (c *Choice[T]) choose(t Tag) (any, error) {
 
 		c.Tag = t
 		c.Val = f.Addr().Interface()
+		logger.Printf("chosen type is %s", reflect.TypeOf(c.Val))
 		return c.Val, nil
 	}
 
@@ -260,7 +266,7 @@ func (c *Choice[T]) choose(t Tag) (any, error) {
 }
 
 // will return the tag and a pointer to the chosen value, or false if nothing has been set
-func (c *Choice[T]) chosen() (Tag, any, bool) {
+func (c *Choice[T]) Chosen() (Tag, any, bool) {
 	var zero Tag
 	return c.Tag, c.Val, c.Tag != zero
 }

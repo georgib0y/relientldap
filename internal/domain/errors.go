@@ -11,13 +11,13 @@ var (
 )
 
 type NodeNotFoundError struct {
-	requestedDN, matchedDn DN
+	RequestedDN, MatchedDN DN
 }
 
 func (e NodeNotFoundError) Error() string {
-	return fmt.Sprintf("requested DN: %s, matched up to: %s", e.requestedDN, e.matchedDn)
+	return fmt.Sprintf("requested DN: %s, matched up to: %s", e.RequestedDN, e.MatchedDN)
 }
 
 func (e *NodeNotFoundError) prependMatchedDn(rdn RDN) {
-	e.matchedDn.rdns = append([]RDN{rdn}, e.matchedDn.rdns...)
+	e.MatchedDN.rdns = append([]RDN{rdn}, e.MatchedDN.rdns...)
 }

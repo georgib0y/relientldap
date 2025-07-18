@@ -187,8 +187,15 @@ func (a *Attribute) HasName(name string) bool {
 	return ok
 }
 
-func (a *Attribute) EqRule() *MatchingRule {
-	return a.eqRule
+func (a *Attribute) EqRule() (*MatchingRule, bool) {
+	// if the current attribute does not have an eq rule, the sup(s) might
+	for a != nil {
+		if a.eqRule != nil {
+			return a.eqRule, true
+		}
+		a = a.sup
+	}
+	return nil, false
 }
 
 func (a *Attribute) SingleVal() bool {
