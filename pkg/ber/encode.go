@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"iter"
 	"reflect"
 )
 
@@ -82,6 +83,88 @@ func encodeLen(w io.Writer, len int) (int, error) {
 
 	n2, err := w.Write(buf[start:])
 	return n1 + n2, err
+}
+
+func encodeSlice(w io.Writer, s any) (int, error) {
+	if reflect.ValueOf(s).Kind() != reflect.Pointer {
+		return 0, fmt.Errorf("encoding array requies pointer not a %q", reflect.ValueOf(s).Kind())
+	}
+
+	if reflect.ValueOf(s).Elem().Kind() != reflect.Interface {
+		return 0, fmt.Errorf("encoding pointer does not point to interface: %q", reflect.ValueOf(s).Elem().Kind())
+	}
+
+	va := reflect.ValueOf(s).Elem().Elem()
+	if va.Kind() != reflect.Slice {
+		return 0, fmt.Errorf("encoding interface is not a struct: %q", va.Kind())
+	}
+
+	written := 0
+
+	next, stop := iter.Pull2(va.Seq2())
+	defer stop()
+	for _, v, ok := next(); ok; _, v, ok = next() {
+		if !v.CanInterface() {
+			return written, fmt.Errorf("could not interface array item: %s", v.Type())
+		}
+
+		// TODO maybe somewhere ensure that array element is not an optional
+
+		tag, err := defaultTag(v.Interface())
+		if err != nil {
+			return written, err
+		}
+
+		n, err := encodeTlv(w, tag, v.Interface())
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+
+	return written, nil
+}
+
+func encodeSet(w io.Writer, s any) (int, error) {
+	if reflect.ValueOf(s).Kind() != reflect.Pointer {
+		return 0, fmt.Errorf("encoding set requies pointer not a %q", reflect.ValueOf(s).Kind())
+	}
+
+	if reflect.ValueOf(s).Elem().Kind() != reflect.Interface {
+		return 0, fmt.Errorf("encoding pointer does not point to interface: %q", reflect.ValueOf(s).Elem().Kind())
+	}
+
+	va := reflect.ValueOf(s).Elem().Elem()
+	if va.Kind() != reflect.Map {
+		return 0, fmt.Errorf("encoding interface is not a struct: %q", va.Kind())
+	}
+
+	if va.Type().Elem() != reflect.TypeFor[struct{}]() {
+		return 0, fmt.Errorf("expected value Elem() to be struct{} not %s", va.Elem().Type())
+	}
+
+	written := 0
+
+	for _, k := range va.MapKeys() {
+		if !k.CanInterface() {
+			return written, fmt.Errorf("could not interface set item: %s", k.Type())
+		}
+
+		// TODO maybe somewhere ensure that array element is not an optional
+
+		tag, err := defaultTag(k.Interface())
+		if err != nil {
+			return written, err
+		}
+
+		n, err := encodeTlv(w, tag, k.Interface())
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+
+	return written, nil
 }
 
 func encodeStruct(w io.Writer, s any) (int, error) {
@@ -174,12 +257,17 @@ func encodeContents(w io.Writer, contents any) (int, error) {
 		return w.Write([]byte(v.(string)))
 	case reflect.Slice:
 		if b, ok := v.([]byte); ok {
-			logger.Print("encoding slice")
+			logger.Print("encoding byte slice")
 			return w.Write(b)
 		}
+		logger.Print("encoding slice")
+		return encodeSlice(w, &v)
 	case reflect.Struct:
 		logger.Print("encoding struct")
 		return encodeStruct(w, &v)
+	case reflect.Map:
+		logger.Print("encoding set")
+		return encodeSet(w, &v)
 	}
 
 	return 0, fmt.Errorf("unknown encoding method for kind %s", rc.Kind())

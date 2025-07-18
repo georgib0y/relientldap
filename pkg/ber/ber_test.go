@@ -467,3 +467,85 @@ func TestDecodeBindRequestSasl(t *testing.T) {
 		t.Fatalf("decoded mechanism %s not eq to exp %s", string(brSasl.Credentials), string(expSasl.Credentials))
 	}
 }
+
+type TestArray struct {
+	Arr []string
+}
+
+func TestEnDeCodeArray(t *testing.T) {
+	ta := TestArray{Arr: []string{"a", "b", "c"}}
+	exp := []byte{
+		0x30, 0x0b, // seq tag/len
+		0x30, 0x09, // seq of tag/len
+		0x04, 0x01, 0x61, // "a"
+		0x04, 0x01, 0x62, // "b"
+		0x04, 0x01, 0x63, // "c"
+	}
+
+	var buf bytes.Buffer
+	if _, err := Encode(&buf, ta); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(buf.Bytes(), exp) {
+		t.Fatalf("encoding:\n%s\ndid not match expected:\n%s\n", util.BytesAsHex(buf.Bytes()), util.BytesAsHex(exp))
+	}
+
+	var decTa TestArray
+	if err := Decode(&buf, &decTa); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(decTa.Arr) != len(ta.Arr) {
+		t.Fatalf("decoded does not have the same number or strings (%d) as exp (%d)", len(decTa.Arr), len(ta.Arr))
+	}
+
+	for i, s := range ta.Arr {
+		if decTa.Arr[i] != s {
+			t.Fatalf("expected decoded %s to match %s", decTa.Arr[i], s)
+		}
+	}
+}
+
+type TestSet struct {
+	S Set[string]
+}
+
+func TestEnDeCodeSet(t *testing.T) {
+	ts := TestSet{S: Set[string]{"a": struct{}{}, "b": struct{}{}, "c": struct{}{}}}
+	var buf bytes.Buffer
+	if _, err := Encode(&buf, ts); err != nil {
+		t.Fatal(err)
+	}
+
+	if !util.ContainsSubslice(buf.Bytes(), []byte{0x30, 0x0b, 0x31, 0x09}) {
+		t.Fatal("encoded does not contain header bytes")
+	}
+
+	if !util.ContainsSubslice(buf.Bytes(), []byte{0x04, 0x01, 0x61}) {
+		t.Fatalf("encoded does not contain %q", "a")
+	}
+
+	if !util.ContainsSubslice(buf.Bytes(), []byte{0x04, 0x01, 0x62}) {
+		t.Fatalf("encoded does not contain %q", "b")
+	}
+
+	if !util.ContainsSubslice(buf.Bytes(), []byte{0x04, 0x01, 0x63}) {
+		t.Fatalf("encoded does not contain %q", "c")
+	}
+
+	var decTs TestSet
+	if err := Decode(&buf, &decTs); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(decTs.S) != len(ts.S) {
+		t.Fatalf("decoded does not have the same number or strings as exp")
+	}
+
+	for s := range ts.S {
+		if _, ok := decTs.S[s]; !ok {
+			t.Fatalf("did not find expected val %s in decoded", s)
+		}
+	}
+}

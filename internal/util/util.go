@@ -69,3 +69,30 @@ func (h *HexLogger) Write(p []byte) (int, error) {
 	h.l.Printf("%s: %s", h.prefix, BytesAsHex(p))
 	return len(p), nil
 }
+
+func ContainsSubslice[T comparable](haystack []T, needle []T) bool {
+	if len(needle) > len(haystack) {
+		return false
+	}
+
+	start := 0
+	end := len(needle)
+	for end <= len(haystack) {
+		found := true
+		for i, ndl := range haystack[start:end] {
+			if needle[i] != ndl {
+				found = false
+				break
+			}
+		}
+
+		if found {
+			return true
+		}
+
+		start += 1
+		end += 1
+	}
+
+	return false
+}

@@ -12,6 +12,44 @@ import (
 	"github.com/georgib0y/relientldap/pkg/ber"
 )
 
+type BindRequest struct {
+	Version int
+	Name    string
+	Auth    *ber.Choice[BindReqChoice]
+}
+
+type BindReqChoice struct {
+	Simple string   `ber:"class=context-specific,cons=constructed,val=0"`
+	Sasl   SaslAuth `ber:"class=context-specific,cons=constructed,val=3"`
+}
+
+type SaslAuth struct {
+	Mechanism   string
+	Credentials string
+}
+
+type BindResponse struct {
+	ResultCode        ResultCode `ber:"class=universal,cons=primitive,val=10"` // enumerated
+	MatchedDN         string
+	DiagnosticMessage string
+	Referral          *ber.Optional[[]byte]
+	ServerSaslCreds   *ber.Optional[string]
+}
+
+// TODO server sasl creds
+func NewBindResponse(msgId int, rc ResultCode, matchedDn, diagnostic string) LdapMsg {
+	resp := BindResponse{
+		ResultCode:        rc,
+		MatchedDN:         matchedDn,
+		DiagnosticMessage: diagnostic,
+	}
+
+	return LdapMsg{
+		MessageId: msgId,
+		Request:   ber.NewChosen[LdapMsgChoice](BindRespTag, resp),
+	}
+}
+
 func getAuthenticatedContext(ctx context.Context, s *Scheduler, dn d.DN) (context.Context, error) {
 	done := make(chan context.Context)
 	errChan := make(chan error)

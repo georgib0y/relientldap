@@ -162,9 +162,10 @@ func defaultTag(v any) (Tag, error) {
 	case reflect.String:
 		t = Tag{Class: Universal, Construct: Primitive, Value: OctetStrUniversalTag}
 	case reflect.Slice:
-		// only allow byte slices
 		if rv.Type().Elem().Kind() == reflect.Uint8 {
 			t = Tag{Class: Universal, Construct: Primitive, Value: OctetStrUniversalTag}
+		} else {
+			t = Tag{Class: Universal, Construct: Constructed, Value: SeqUniversalTagVal}
 		}
 	case reflect.Struct:
 		t = Tag{Class: Universal, Construct: Constructed, Value: SeqUniversalTagVal}
@@ -329,6 +330,8 @@ func (o *Optional[T]) setAny(v any) error {
 func (o *Optional[T]) Unset(v T) {
 	o.is_some = false
 }
+
+type Set[T comparable] map[T]struct{}
 
 type BerStructTag struct {
 	class *Class

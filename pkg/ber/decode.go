@@ -122,6 +122,61 @@ func decodeLen(r io.Reader) (int, int, error) {
 	return int(ui), n + n1, nil
 }
 
+func decodeSlice(r io.Reader, len int, s any) (int, error) {
+	v := reflect.ValueOf(s)
+
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return 0, fmt.Errorf("s is not a pointer or is nil")
+	}
+
+	v = v.Elem()
+
+	if v.Kind() != reflect.Slice {
+		return 0, fmt.Errorf("s does not point to a slice (%s)", v.Type())
+	}
+
+	read := 0
+
+	// TODO this could all be more efficient
+	sv := reflect.MakeSlice(v.Type(), 0, 10)
+	for read < len {
+		dt, n, err := decodeTag(r)
+		read += n
+		if err != nil {
+			return read, err
+		}
+
+		len, n, err := decodeLen(r)
+		read += n
+		if err != nil {
+			return read, err
+		}
+
+		// TODO enforce cant be choice or optional
+		elem := reflect.New(v.Type().Elem())
+		t, err := defaultTag(elem.Interface())
+		if t.Class != dt.Class || t.Construct != dt.Construct || t.Value != dt.Value {
+			logger.Printf("decoded tag %s did not match expected %s", dt, t)
+			return read, nil
+		}
+
+		n, err = decodeContents(r, len, elem.Interface())
+		read += n
+		if err != nil {
+			return read, err
+		}
+
+		sv = reflect.Append(sv, elem.Elem())
+	}
+
+	if read > len {
+		return read, fmt.Errorf("decoding slice read %d bytes, more than it should have (%d)", read, len)
+	}
+
+	v.Set(sv)
+	return read, nil
+}
+
 // returns true if the value was decoded, or false if not decode (optional was not present)
 func decodeStructField(r io.Reader, sv reflect.Value, idx int, dt Tag, len int) (bool, int, error) {
 	f := sv.Field(idx)
@@ -173,6 +228,65 @@ func decodeStructField(r io.Reader, sv reflect.Value, idx int, dt Tag, len int) 
 
 	n, err := decodeContents(r, len, val)
 	return true, n, err
+}
+
+func decodeSet(r io.Reader, len int, s any) (int, error) {
+	v := reflect.ValueOf(s)
+
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return 0, fmt.Errorf("s is not a pointer or is nil")
+	}
+
+	v = v.Elem()
+
+	if v.Kind() != reflect.Map {
+		return 0, fmt.Errorf("s does not point to a map (%s)", v.Type())
+	}
+
+	if v.Type().Elem() != reflect.TypeFor[struct{}]() {
+		return 0, fmt.Errorf("s should have value type of struct{}, not %s", v.Elem().Type())
+	}
+
+	read := 0
+
+	// TODO this could all be more efficient
+	mv := reflect.MakeMap(v.Type())
+	for read < len {
+		dt, n, err := decodeTag(r)
+		read += n
+		if err != nil {
+			return read, err
+		}
+
+		len, n, err := decodeLen(r)
+		read += n
+		if err != nil {
+			return read, err
+		}
+
+		// TODO enforce cant be choice or optional
+		elem := reflect.New(v.Type().Key())
+		t, err := defaultTag(elem.Interface())
+		if t.Class != dt.Class || t.Construct != dt.Construct || t.Value != dt.Value {
+			logger.Printf("decoded tag %s did not match expected %s", dt, t)
+			return read, nil
+		}
+
+		n, err = decodeContents(r, len, elem.Interface())
+		read += n
+		if err != nil {
+			return read, err
+		}
+
+		mv.SetMapIndex(elem.Elem(), reflect.ValueOf(struct{}{}))
+	}
+
+	if read > len {
+		return read, fmt.Errorf("decoding map read %d bytes, more than it should have (%d)", read, len)
+	}
+
+	v.Set(mv)
+	return read, nil
 }
 
 func decodeStruct(r io.Reader, len int, s any) (int, error) {
@@ -272,15 +386,27 @@ func decodeContents(r io.Reader, len int, contents any) (int, error) {
 		v.Elem().Set(reflect.ValueOf(string(b)))
 
 	case reflect.Slice:
-		if v.Elem().Type().Elem().Kind() != reflect.Uint8 {
-			return 0, fmt.Errorf("cannot decode slice type for []%s", v.Elem().Type().Elem().Kind())
+		if v.Elem().Type().Elem().Kind() == reflect.Uint8 {
+			b, n, err := decodeOctetString(r, len)
+			read += n
+			if err != nil {
+				return read, err
+			}
+			v.Elem().Set(reflect.ValueOf(b))
 		}
-		b, n, err := decodeOctetString(r, len)
+
+		n, err := decodeSlice(r, len, contents)
 		read += n
 		if err != nil {
 			return read, err
 		}
-		v.Elem().Set(reflect.ValueOf(b))
+
+	case reflect.Map:
+		n, err := decodeSet(r, len, contents)
+		read += n
+		if err != nil {
+			return read, err
+		}
 	case reflect.Struct:
 		n, err := decodeStruct(r, len, contents)
 		read += n
