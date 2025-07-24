@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"log"
+	"reflect"
 	"strings"
 )
 
@@ -33,12 +34,22 @@ func (m MatchingRule) Syntax() OID {
 
 func (m MatchingRule) Match(v1, v2 string) (bool, error) {
 	if m.match == nil {
-		logger.Panic("tried to call match on a zeroed matchingrule")
+		return false, NewLdapError(UnwillingToPerform, "", "Matching rule %s has no implementation", m.name)
 	}
 	return m.match(v1, v2)
 }
 
+func (m MatchingRule) Eq(o MatchingRule) bool {
+	return m.numericoid == o.numericoid && m.name == o.name && m.syntax == o.syntax
+}
+
 var matchingRules = map[string]MatchingRule{
+	"objectIdentifierMatch": MatchingRule{
+		numericoid: "2.5.13.0",
+		name:       "objectIdentifierMatch",
+		syntax:     "1.3.6.1.4.1.1466.115.121.1.38",
+		match:      objectIdentifierMatch,
+	},
 	"bitStringMatch": MatchingRule{
 		numericoid: "2.5.13.16",
 		name:       "bitStringMatch",
@@ -55,19 +66,16 @@ var matchingRules = map[string]MatchingRule{
 		numericoid: "1.3.6.1.4.1.1466.109.114.3",
 		name:       "caseIgnoreIA5SubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
-		match:      unimplementedMatch,
 	},
 	"caseIgnoreListMatch": MatchingRule{
 		numericoid: "2.5.13.11",
 		name:       "caseIgnoreListMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.41",
-		match:      unimplementedMatch,
 	},
 	"caseIgnoreListSubstringsMatch": MatchingRule{
 		numericoid: "2.5.13.12",
 		name:       "caseIgnoreListSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
-		match:      unimplementedMatch,
 	},
 	"caseIgnoreMatch": MatchingRule{
 		numericoid: "2.5.13.2",
@@ -79,80 +87,80 @@ var matchingRules = map[string]MatchingRule{
 		numericoid: "2.5.13.4",
 		name:       "caseIgnoreSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
-		match:      unimplementedMatch,
 	},
 	"caseIgnoreOrderingMatch": MatchingRule{
 		numericoid: "2.5.13.3",
 		name:       "caseIgnoreOrderingMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.15",
-		match:      unimplementedMatch,
 	},
 	"distinguishedNameMatch": MatchingRule{
 		numericoid: "2.5.13.1",
 		name:       "distinguishedNameMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.12",
-		match:      unimplementedMatch,
 	},
 	"numericStringMatch": MatchingRule{
 		numericoid: "2.5.13.8",
 		name:       "numericStringMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.36",
-		match:      unimplementedMatch,
 	},
 	"numericStringSubstringsMatch": MatchingRule{
 		numericoid: "2.5.13.10",
 		name:       "numericStringSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
-		match:      unimplementedMatch,
 	},
 	"octetStringMatch": MatchingRule{
 		numericoid: "2.5.13.17",
 		name:       "octetStringMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.40",
-		match:      unimplementedMatch,
 	},
 	"telephoneNumberMatch": MatchingRule{
 		numericoid: "2.5.13.20",
 		name:       "telephoneNumberMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.50",
-		match:      unimplementedMatch,
 	},
 	"telephoneNumberSubstringsMatch": MatchingRule{
 		numericoid: "2.5.13.21",
 		name:       "telephoneNumberSubstringsMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.58",
-		match:      unimplementedMatch,
 	},
 	"uniqueMemberMatch": MatchingRule{
 		numericoid: "2.5.13.23",
 		name:       "uniqueMemberMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.34",
-		match:      unimplementedMatch,
 	},
 }
 
-func GetMatchingRule(nameOrOid string) (*MatchingRule, bool) {
+func GetMatchingRule(nameOrOid string) (MatchingRule, error) {
 	if mr, ok := matchingRules[nameOrOid]; ok {
-		return &mr, true
+		return mr, nil
 	}
 
 	for _, mr := range matchingRules {
 		if mr.numericoid == OID(nameOrOid) {
-			return &mr, true
+			return mr, nil
 		}
 	}
 
-	return nil, false
+	return MatchingRule{}, fmt.Errorf("unknown matching rule %q", nameOrOid)
 }
 
 // For usage in tests where the name or oid is known, panics if the
 // name/oid is not known to be good, use GetMatchingRule elsewhere
-func GetMatchingRuleUnchecked(nameOrOid string) *MatchingRule {
-	mr, ok := GetMatchingRule(nameOrOid)
-	if !ok {
-		log.Panicf("unknown matching rule name/oid: %s", nameOrOid)
+func GetMatchingRuleUnchecked(nameOrOid string) MatchingRule {
+	mr, err := GetMatchingRule(nameOrOid)
+	if err != nil {
+		log.Panicf("unknown matching rule name/oid: %s, %s", nameOrOid, err)
 	}
 	return mr
+}
+
+func (m MatchingRule) String() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Numericoid: %q\n", m.numericoid)
+	fmt.Fprintf(&sb, "Name: %q\n", m.name)
+	fmt.Fprintf(&sb, "Syntax: %q\n", m.syntax)
+	fmt.Fprintf(&sb, "Func name: %p\n", reflect.TypeOf(m.match).Name())
+	return sb.String()
 }
 
 func unimplementedMatch(s1, s2 string) (bool, error) {
@@ -167,6 +175,11 @@ func bitStringMatch(s1, s2 string) (bool, error) {
 // TODO insignificant space handling
 func caseIgnoreMatch(s1, s2 string) (bool, error) {
 	return strings.ToLower(s1) == strings.ToLower(s2), nil
+}
+
+func objectIdentifierMatch(s1, s2 string) (bool, error) {
+	// TODO this match also include implicit matching (some descr == oid)
+	return s1 == s2, nil
 }
 
 type substringAssertion struct {

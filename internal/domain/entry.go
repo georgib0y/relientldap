@@ -105,7 +105,7 @@ func (e *Entry) ContainsAttrVal(attr *Attribute, val string) (bool, error) {
 	for v := range a {
 		eq, ok := attr.EqRule()
 		if !ok {
-			return false, fmt.Errorf("attr %s does not have an eq rule", attr.Oid())
+			return false, NewLdapError(InappropriateMatching, "", "attr %s does not have an eq rule", attr.Oid())
 		}
 		m, err := eq.Match(val, v)
 		if err != nil {

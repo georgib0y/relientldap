@@ -7,6 +7,13 @@ import (
 	"github.com/georgib0y/relientldap/internal/util"
 )
 
+var ObjectClassAttribute = NewAttributeBuilder().
+	SetOid("2.5.4.0").
+	AddNames("objectClass").
+	SetEqRule(GetMatchingRuleUnchecked("objectIdentifierMatch")).
+	SetSyntax("1.3.6.1.4.1.1466.115.121.1.38", 0).
+	Build()
+
 type UsageType int
 
 const (
@@ -52,7 +59,7 @@ type Attribute struct {
 	desc                             string
 	obsolete                         bool
 	sup                              *Attribute
-	eqRule, ordRule, subStrRule      *MatchingRule
+	eqRule, ordRule, subStrRule      MatchingRule
 	syntax                           OID
 	syntaxLen                        int // max length the value can contain
 	singleVal, collective, noUserMod bool
@@ -91,8 +98,8 @@ func (b *AttributeBuilder) SetDesc(desc string) *AttributeBuilder {
 	return b
 }
 
-func (b *AttributeBuilder) SetObsolete() *AttributeBuilder {
-	b.a.obsolete = true
+func (b *AttributeBuilder) SetObsolete(o bool) *AttributeBuilder {
+	b.a.obsolete = o
 	return b
 }
 
@@ -106,17 +113,17 @@ func (b *AttributeBuilder) SetSup(sup *Attribute) *AttributeBuilder {
 	return b
 }
 
-func (b *AttributeBuilder) SetEqRule(rule *MatchingRule) *AttributeBuilder {
+func (b *AttributeBuilder) SetEqRule(rule MatchingRule) *AttributeBuilder {
 	b.a.eqRule = rule
 	return b
 }
 
-func (b *AttributeBuilder) SetOrdRule(rule *MatchingRule) *AttributeBuilder {
+func (b *AttributeBuilder) SetOrdRule(rule MatchingRule) *AttributeBuilder {
 	b.a.ordRule = rule
 	return b
 }
 
-func (b *AttributeBuilder) SetSubStrRule(rule *MatchingRule) *AttributeBuilder {
+func (b *AttributeBuilder) SetSubStrRule(rule MatchingRule) *AttributeBuilder {
 	b.a.subStrRule = rule
 	return b
 }
@@ -132,18 +139,18 @@ func (b *AttributeBuilder) SetSyntaxLength(len int) *AttributeBuilder {
 	return b
 }
 
-func (b *AttributeBuilder) SetSingleVal() *AttributeBuilder {
-	b.a.singleVal = true
+func (b *AttributeBuilder) SetSingleVal(s bool) *AttributeBuilder {
+	b.a.singleVal = s
 	return b
 }
 
-func (b *AttributeBuilder) SetCollective() *AttributeBuilder {
-	b.a.collective = true
+func (b *AttributeBuilder) SetCollective(c bool) *AttributeBuilder {
+	b.a.collective = c
 	return b
 }
 
-func (b *AttributeBuilder) SetNoUserMod() *AttributeBuilder {
-	b.a.noUserMod = true
+func (b *AttributeBuilder) SetNoUserMod(n bool) *AttributeBuilder {
+	b.a.noUserMod = n
 	return b
 }
 
@@ -187,15 +194,16 @@ func (a *Attribute) HasName(name string) bool {
 	return ok
 }
 
-func (a *Attribute) EqRule() (*MatchingRule, bool) {
+func (a *Attribute) EqRule() (MatchingRule, bool) {
+	var zero MatchingRule
 	// if the current attribute does not have an eq rule, the sup(s) might
 	for a != nil {
-		if a.eqRule != nil {
+		if !a.eqRule.Eq(zero) {
 			return a.eqRule, true
 		}
 		a = a.sup
 	}
-	return nil, false
+	return zero, false
 }
 
 func (a *Attribute) SingleVal() bool {
@@ -204,43 +212,44 @@ func (a *Attribute) SingleVal() bool {
 
 func (a *Attribute) String() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Numericoid: %s\n", string(a.numericoid))
+	fmt.Fprintf(&sb, "Numericoid: %q\n", string(a.numericoid))
 	sb.WriteString("Names:")
 	for n := range a.names {
-		sb.WriteString(" " + n)
+		fmt.Fprintf(&sb, " %q", n)
 	}
-	fmt.Fprintf(&sb, "\nDesc: %s\n", a.desc)
+	fmt.Fprintf(&sb, "\nDesc: %q\n", a.desc)
 	fmt.Fprintf(&sb, "Obsolete: %t\n", a.obsolete)
 	sb.WriteString("Sup Oid: ")
 	if a.sup != nil {
-		sb.WriteString(string(a.sup.Oid()))
+		fmt.Fprintf(&sb, " %q", string(a.sup.Oid()))
 	}
 	sb.WriteRune('\n')
 
+	var zero MatchingRule
 	sb.WriteString("Eq Rule: ")
-	if a.eqRule != nil {
-		sb.WriteString(string(a.eqRule.Syntax()))
+	if !a.eqRule.Eq(zero) {
+		fmt.Fprintf(&sb, " %q", string(a.eqRule.Syntax()))
 	}
 	sb.WriteRune('\n')
 
 	sb.WriteString("Ord Rule: ")
-	if a.ordRule != nil {
-		sb.WriteString(string(a.ordRule.Syntax()))
+	if !a.ordRule.Eq(zero) {
+		fmt.Fprintf(&sb, " %q", string(a.ordRule.Syntax()))
 	}
 	sb.WriteRune('\n')
 
 	sb.WriteString("Substr Rule: ")
-	if a.subStrRule != nil {
-		sb.WriteString(string(a.subStrRule.Syntax()))
+	if !a.subStrRule.Eq(zero) {
+		fmt.Fprintf(&sb, " %q", string(a.subStrRule.Syntax()))
 	}
 	sb.WriteRune('\n')
 
-	fmt.Fprintf(&sb, "Syntax: %s\n", a.syntax)
+	fmt.Fprintf(&sb, "Syntax: %q\n", a.syntax)
 	fmt.Fprintf(&sb, "Syntax len: %d\n", a.syntaxLen)
 	fmt.Fprintf(&sb, "Single val: %t\n", a.singleVal)
 	fmt.Fprintf(&sb, "Collective: %t\n", a.collective)
 	fmt.Fprintf(&sb, "NoUserMod: %t\n", a.noUserMod)
-	fmt.Fprintf(&sb, "Usage: %s\n", a.usage)
+	fmt.Fprintf(&sb, "Usage: %q\n", a.usage)
 
 	return sb.String()
 }
@@ -268,11 +277,11 @@ func AttributesAreEqual(a1, a2 *Attribute) error {
 	case a1.obsolete != a2.obsolete:
 		return fmt.Errorf("obsoletes dont match")
 
-	case a1.eqRule != a2.eqRule:
-		return fmt.Errorf("eqRules dont match")
-	case a1.ordRule != a2.ordRule:
+	case a1.eqRule.numericoid != a2.eqRule.numericoid:
+		return fmt.Errorf("eqRules dont match, %s\n%s", a1.eqRule, a2.eqRule)
+	case a1.ordRule.numericoid != a2.ordRule.numericoid:
 		return fmt.Errorf("ordRules dont match")
-	case a1.subStrRule != a2.subStrRule:
+	case a1.subStrRule.numericoid != a2.subStrRule.numericoid:
 		return fmt.Errorf("subStrRules dont match")
 	case a1.syntax != a2.syntax:
 		return fmt.Errorf("syntaxes dont match")

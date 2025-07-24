@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
+	"os"
 	"regexp"
 	"strings"
 )
+
+var logger = log.New(os.Stderr, "parser: ", log.Lshortfile)
 
 type TokenType int
 
@@ -154,6 +158,216 @@ func readNext(r *bufio.Reader) (string, error) {
 	}
 }
 
+type Tokeniser struct {
+	tokens []Token
+}
+
+func NewTokeniser(r io.Reader) (*Tokeniser, error) {
+	tokens, err := tokenise(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if !checkTokensBalanced(tokens) {
+		return nil, fmt.Errorf("tokens unbalanced")
+	}
+
+	return &Tokeniser{tokens}, nil
+}
+
+func (t *Tokeniser) HasNext() bool {
+	return len(t.tokens) > 0
+}
+
+func (t *Tokeniser) Next() (Token, bool) {
+	if len(t.tokens) == 0 {
+		return Token{}, false
+	}
+
+	token := t.tokens[0]
+	t.tokens = t.tokens[1:]
+	return token, true
+}
+
+func (t *Tokeniser) Peek() (Token, bool) {
+	if len(t.tokens) == 0 {
+		return Token{}, false
+	}
+	return t.tokens[0], true
+}
+
+func (t *Tokeniser) NextNumericoid() (Token, error) {
+	n, ok := t.Next()
+	if !ok {
+		return Token{}, fmt.Errorf("expected numericoid, got nothing")
+	}
+
+	if n.tokenType != NUMERICOID {
+		return Token{}, fmt.Errorf("expected numericoid, got %s (%s)", n.tokenType, n.val)
+	}
+
+	return n, nil
+}
+
+func (t *Tokeniser) NextOid() (Token, error) {
+	n, ok := t.Next()
+	if !ok {
+		return Token{}, fmt.Errorf("expected oid, got nothing")
+	}
+
+	if n.tokenType != NUMERICOID && n.tokenType != KEYWORD && n.tokenType != DESCR {
+		return Token{}, fmt.Errorf("expected oid, got %s (%s)", n.tokenType, n.val)
+	}
+
+	return n, nil
+}
+
+func (t *Tokeniser) NextOids() ([]Token, error) {
+	peek, ok := t.Peek()
+	if !ok {
+		return nil, fmt.Errorf("expected oids, got nothing")
+	}
+
+	if peek.tokenType == NUMERICOID || peek.tokenType == KEYWORD || peek.tokenType == DESCR {
+		n, _ := t.Next()
+		return []Token{n}, nil
+	}
+
+	subt, err := t.ParenSubTokeniser()
+	if err != nil {
+		return nil, err
+	}
+
+	tokens := []Token{}
+	dollar := false
+	for on, ok := subt.Next(); ok; on, ok = subt.Next() {
+		if dollar {
+			if on.tokenType == DOLLAR {
+				dollar = !dollar
+				continue
+			}
+			return nil, fmt.Errorf("expected dollar, got %q (%q)", on.tokenType, on.val)
+		}
+
+		if on.tokenType != NUMERICOID && on.tokenType != KEYWORD && on.tokenType != DESCR {
+			return nil, fmt.Errorf("expected oid got %s", on.tokenType)
+		}
+
+		tokens = append(tokens, on)
+		dollar = !dollar
+	}
+
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("oids is empty")
+	}
+
+	return tokens, nil
+}
+
+func (t *Tokeniser) NextNoidlen() (Token, error) {
+	n, ok := t.Next()
+	if !ok {
+		return Token{}, fmt.Errorf("expected noidlen, got nothing")
+	}
+
+	if n.tokenType != NUMERICOID && n.tokenType != NOIDLEN {
+		return Token{}, fmt.Errorf("expected noidlen, got %s (%s)", n.tokenType, n.val)
+	}
+
+	return n, nil
+}
+
+func (t *Tokeniser) NextQdescrs() ([]Token, error) {
+	p, ok := t.Peek()
+	if !ok {
+		return nil, fmt.Errorf("expected qdescr(s), got nothing")
+	}
+
+	if p.tokenType == QDESCR {
+		n, _ := t.Next()
+		return []Token{n}, nil
+	}
+
+	qt, err := t.ParenSubTokeniser()
+	if err != nil {
+		return nil, err
+	}
+
+	tokens := []Token{}
+	for qn, ok := qt.Next(); ok; qn, ok = qt.Next() {
+		if qn.tokenType != QDESCR {
+			return nil, fmt.Errorf("expected qdescr got %s", qn.tokenType)
+		}
+
+		tokens = append(tokens, qn)
+	}
+
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("qdescrs is empty")
+	}
+
+	return tokens, nil
+}
+
+func (t *Tokeniser) NextQdstring() (Token, error) {
+	n, ok := t.Next()
+	if !ok {
+		return Token{}, fmt.Errorf("expected qdstring, got nothing")
+	}
+
+	if n.tokenType != QDESCR && n.tokenType != QDSTRING {
+		return Token{}, fmt.Errorf("expected qdstring, got %s", n.tokenType)
+	}
+
+	return n, nil
+}
+
+func (t *Tokeniser) NextDescr() (Token, error) {
+	n, ok := t.Next()
+	if !ok {
+		return Token{}, fmt.Errorf("expected descr, got nothing")
+	}
+
+	if n.tokenType != DESCR {
+		return Token{}, fmt.Errorf("expected descr, got %s", n.tokenType)
+	}
+
+	return n, nil
+}
+
+// returns a subtokeniser with just the tokens inside the parentheses of the current token
+// removes the tokens from the main tokeniser
+// errors if the main tokeniser is not on a LPAREN
+func (t *Tokeniser) ParenSubTokeniser() (*Tokeniser, error) {
+	if t.tokens[0].tokenType != LPAREN {
+		return nil, fmt.Errorf("Expected LPAREN, got %s: %s",
+			t.tokens[0].tokenType,
+			t.tokens[0].val,
+		)
+	}
+
+	bal := 1
+	rparenIdx := 1
+	for ; rparenIdx < len(t.tokens) && bal != 0; rparenIdx += 1 {
+		if t.tokens[rparenIdx].tokenType == LPAREN {
+			bal += 1
+		}
+
+		if t.tokens[rparenIdx].tokenType == RPAREN {
+			bal -= 1
+		}
+	}
+
+	if bal != 0 {
+		return nil, fmt.Errorf("Could not find matching rparen")
+	}
+
+	subtokeniser := &Tokeniser{tokens: t.tokens[1 : rparenIdx-1]}
+	t.tokens = t.tokens[rparenIdx:]
+
+	return subtokeniser, nil
+}
+
 func tokenise(r io.Reader) ([]Token, error) {
 	bufr := bufio.NewReader(r)
 	tokens := []Token{}
@@ -188,6 +402,10 @@ func tokenise(r io.Reader) ([]Token, error) {
 func checkTokensBalanced(tokens []Token) bool {
 	l, r := 0, 0
 	for _, t := range tokens {
+		// if at any point there are more right parens then left then something is wrong
+		if r > l {
+			return false
+		}
 		if t.tokenType == LPAREN {
 			l += 1
 		}
@@ -199,7 +417,9 @@ func checkTokensBalanced(tokens []Token) bool {
 	return l == r
 }
 
-// assumes s is a known qdescr or qdstring
 func stripQuotes(s string) string {
-	return s[1 : len(s)-1]
+	if s[0] == '\'' && s[len(s)-1] == '\'' {
+		return s[1 : len(s)-1]
+	}
+	return s
 }

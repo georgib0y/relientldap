@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net"
 	"os"
 
+	d "github.com/georgib0y/relientldap/internal/domain"
 	"github.com/georgib0y/relientldap/internal/util"
 	"github.com/georgib0y/relientldap/pkg/ber"
 )
@@ -16,7 +18,7 @@ import (
 type ContextKey int
 
 const (
-	BoundDnKey ContextKey = iota
+	BoundEntryKey ContextKey = iota
 )
 
 var logger = log.New(os.Stderr, "server: ", log.Lshortfile)
@@ -25,20 +27,75 @@ var (
 	InvalidPacket = fmt.Errorf("Invalid Packet")
 )
 
-type HandleFunc = func(ctx context.Context, w io.Writer, s *Scheduler, msg LdapMsg) (context.Context, error)
+type Handler interface {
+	RequestTag() ber.Tag
+	ResponseTag() ber.Tag
+	Handle(ctx context.Context, w io.Writer, msg LdapMsg) error
+}
+
+type handleFunc struct {
+	reqTag ber.Tag
+	resTag ber.Tag
+	handle func(context.Context, io.Writer, LdapMsg) error
+}
+
+func (h *handleFunc) RequestTag() ber.Tag {
+	return h.reqTag
+}
+
+func (h *handleFunc) ResponseTag() ber.Tag {
+	return h.resTag
+}
+
+func (h *handleFunc) Handle(ctx context.Context, w io.Writer, msg LdapMsg) error {
+	return h.handle(ctx, w, msg)
+}
+
+func HandleFunc(reqTag, resTag ber.Tag, handle func(context.Context, io.Writer, LdapMsg) error) Handler {
+	return &handleFunc{reqTag, resTag, handle}
+}
 
 type Mux struct {
-	scheduler *Scheduler
-	handlers  map[ber.Tag]HandleFunc
+	handlers map[ber.Tag]Handler
 }
 
-func NewMux(scheduler *Scheduler) *Mux {
-	return &Mux{scheduler, map[ber.Tag]HandleFunc{}}
+func NewMux() *Mux {
+	return &Mux{map[ber.Tag]Handler{}}
 }
 
-func (m *Mux) AddHandler(tag ber.Tag, h HandleFunc) *Mux {
-	m.handlers[tag] = h
+func (m *Mux) AddHandler(h Handler) *Mux {
+	m.handlers[h.RequestTag()] = h
 	return m
+}
+
+func writeResponse(w io.Writer, res LdapMsg) error {
+	if res == (LdapMsg{}) {
+		return fmt.Errorf("trying to write an empty response - not encoding!")
+	}
+
+	var buf bytes.Buffer
+	logger.Print("encoding %v...", res)
+	_, err := ber.Encode(&buf, res)
+	if err != nil {
+		return err
+	}
+	logger.Printf("... enc buff len is: %d bytes", buf.Len())
+	_, err = w.Write(buf.Bytes())
+	if err != nil {
+		return err
+	}
+	logger.Printf("encoded %t", res)
+	return nil
+}
+
+func tryWriteErr(h Handler, w io.Writer, msgId int, err error) error {
+	lerr, ok := err.(d.LdapError)
+	if !ok {
+		return err
+	}
+
+	res := NewResultMsg(h.ResponseTag(), msgId, lerr.ResultCode, lerr.MatchedDN, lerr.DiagnosticMessage)
+	return writeResponse(w, res)
 }
 
 func (m *Mux) Serve(c net.Conn) {
@@ -47,7 +104,8 @@ func (m *Mux) Serve(c net.Conn) {
 	teeIn := io.TeeReader(c, util.NewHexLogger(logger, "in"))
 	teeOut := io.MultiWriter(util.NewHexLogger(logger, "out"), c)
 
-	ctx := context.Background()
+	boundEntry := new(*d.Entry)
+	ctx := context.WithValue(context.Background(), BoundEntryKey, boundEntry)
 
 	for {
 		logger.Print("recieving message...")
@@ -64,23 +122,25 @@ func (m *Mux) Serve(c net.Conn) {
 			logger.Printf("no choices was made for incoming ldap message")
 			return
 		}
-		handler, ok := m.handlers[tag]
+		h, ok := m.handlers[tag]
 		if !ok {
 			logger.Printf("unkown ldapmsg tag %s", tag)
 			return
 		}
 
-		newCtx, err := handler(ctx, teeOut, m.scheduler, msg)
+		err := h.Handle(ctx, teeOut, msg)
 		if errors.Is(err, UnbindError) {
 			logger.Print("recieved unbind request, closing connection")
 			return
 		} else if err != nil {
-			// TODO handle handler errors more gracefully
-			logger.Print(err)
-			return
+			err = tryWriteErr(h, teeOut, msg.MessageId, err)
+			if err != nil {
+				logger.Printf("unrecoverable err: %s", err)
+				return
+			}
 		}
 
 		logger.Print("... sent response")
-		ctx = newCtx
+
 	}
 }

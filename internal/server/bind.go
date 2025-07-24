@@ -1,21 +1,21 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"reflect"
 
+	"github.com/georgib0y/relientldap/internal/app"
 	d "github.com/georgib0y/relientldap/internal/domain"
 	"github.com/georgib0y/relientldap/pkg/ber"
 )
 
 type BindRequest struct {
-	Version int
-	Name    string
-	Auth    *ber.Choice[BindReqChoice]
+	Ver  int
+	Name string
+	Auth *ber.Choice[BindReqChoice]
 }
 
 type BindReqChoice struct {
@@ -28,130 +28,140 @@ type SaslAuth struct {
 	Credentials string
 }
 
-type BindResponse struct {
-	ResultCode        ResultCode `ber:"class=universal,cons=primitive,val=10"` // enumerated
-	MatchedDN         string
-	DiagnosticMessage string
-	Referral          *ber.Optional[[]byte]
-	ServerSaslCreds   *ber.Optional[string]
+func (br BindRequest) Version() int {
+	return br.Ver
+}
+
+func (br BindRequest) Dn() string {
+	return br.Name
+}
+
+func (br BindRequest) Simple() (string, bool) {
+	if _, auth, ok := br.Auth.Chosen(); ok {
+		if simple, ok := auth.(*string); ok {
+			return *simple, true
+		}
+
+	}
+
+	return "", false
+}
+
+func (br BindRequest) SaslMechanism() (string, bool) {
+	if _, auth, ok := br.Auth.Chosen(); ok {
+		if sasl, ok := auth.(*SaslAuth); ok {
+			return sasl.Mechanism, true
+		}
+
+	}
+
+	return "", false
+}
+
+func (br BindRequest) SaslCredentials() (string, bool) {
+	if _, auth, ok := br.Auth.Chosen(); ok {
+		if sasl, ok := auth.(*SaslAuth); ok {
+			return sasl.Credentials, true
+		}
+
+	}
+
+	return "", false
 }
 
 // TODO server sasl creds
-func NewBindResponse(msgId int, rc ResultCode, matchedDn, diagnostic string) LdapMsg {
-	resp := BindResponse{
-		ResultCode:        rc,
-		MatchedDN:         matchedDn,
-		DiagnosticMessage: diagnostic,
-	}
-
-	return LdapMsg{
-		MessageId: msgId,
-		Request:   ber.NewChosen[LdapMsgChoice](BindRespTag, resp),
-	}
+func NewBindResponse(msgId int, rc d.ResultCode, matchedDn, format string, a ...any) LdapMsg {
+	return NewResultMsg(BindResponseTag, msgId, rc, matchedDn, format, a...)
 }
 
-func getAuthenticatedContext(ctx context.Context, s *Scheduler, dn d.DN) (context.Context, error) {
-	done := make(chan context.Context)
-	errChan := make(chan error)
+type BindHandler struct {
+	bs *app.BindService
+}
 
-	s.Schedule(func(d d.DIT) {
-		if _, err := d.GetEntry(dn); err != nil {
-			errChan <- err
-			return
+func NewBindHandler(bs *app.BindService) *BindHandler {
+	return &BindHandler{bs}
+}
+
+func (h *BindHandler) RequestTag() ber.Tag {
+	return BindRequestTag
+}
+
+func (h *BindHandler) ResponseTag() ber.Tag {
+	return BindResponseTag
+}
+
+func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err error) {
+	var res LdapMsg
+	defer func() {
+		if err == nil {
+			err = writeResponse(w, res)
 		}
+	}()
 
-		newCtx := context.WithValue(ctx, BoundDnKey, dn)
-		done <- newCtx
-	})
-
-	// wait for the scheduled fn to finish
-	select {
-	case newCtx := <-done:
-		return newCtx, nil
-	case err := <-errChan:
-		return ctx, err
-	}
-
-}
-
-// TODO refactor
-func HandleBindRequest(ctx context.Context, w io.Writer, s *Scheduler, msg LdapMsg) (context.Context, error) {
 	logger.Print("in bind request")
-
-	// TODO check version and send protocolerror
 
 	_, req, ok := msg.Request.Chosen()
 	if !ok {
-		return ctx, fmt.Errorf("could not get choice for bind request")
+		res = NewBindResponse(
+			msg.MessageId,
+			d.ProtocolError,
+			"",
+			"could not get choice for bind request",
+		)
+		return
 	}
 
 	br, ok := req.(*BindRequest)
 	if !ok {
-		return ctx, fmt.Errorf("expected *BindRequest, got %s", reflect.TypeOf(req))
+		res = NewBindResponse(
+			msg.MessageId,
+			d.ProtocolError,
+			"",
+			"expected *BindRequest, got %s", reflect.TypeOf(req),
+		)
+		return
 	}
 	logger.Print("extracted bind request")
 
-	// dn, err := d.NormaliseDN(s.s, br.Name)
-	// if err != nil {
-	// 	return ctx, err
-	// }
-
-	// logger.Printf("%s normalised to %s", br.Name, dn)
-	// _, auth, ok := br.Auth.Chosen()
-	// if !ok {
-	// 	return ctx, fmt.Errorf("no choice made for bind request auth")
-	// }
-
-	// var resp LdapMsg
-	// switch auth.(type) {
-	// case *string:
-	// 	logger.Print("using simple auth")
-	// 	newCtx, err := getAuthenticatedContext(ctx, s, dn)
-
-	// 	var nfErr *d.NodeNotFoundError
-	// 	if errors.As(err, &nfErr) {
-	// 		diag := fmt.Sprintf("no object found for dn: %s", br.Name)
-	// 		resp = NewBindResponse(msg.MessageId, NoSuchObject, nfErr.MatchedDN.String(), diag)
-	// 		break
-	// 	} else if err != nil {
-	// 		return ctx, err
-	// 	}
-
-	// 	ctx = newCtx
-	// 	diag := "success! your password was not checked yet but you're cool"
-	// 	resp = NewBindResponse(msg.MessageId, Success, br.Name, diag)
-
-	// case *SaslAuth:
-	// 	logger.Print("using sasl auth")
-	// 	resp = NewBindResponse(msg.MessageId, AuthMethodNotSupported, br.Name, "sasl auth unsupported")
-
-	// default:
-	// 	logger.Print("unknown auth type")
-	// 	resp = NewBindResponse(msg.MessageId, ProtocolError, br.Name, "unknown bind auth type")
-	// }
-
-	///////
-	diag := "success! your password was not checked yet but you're cool"
-	resp := NewBindResponse(msg.MessageId, Success, br.Name, diag)
-	//////
-
-	var buf bytes.Buffer
-	logger.Print("encoding...")
-	if _, err := ber.Encode(&buf, resp); err != nil {
-		return ctx, err
-	}
-	logger.Printf("... enc buff len is: %d bytes", buf.Len())
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		return ctx, err
+	entry, autherr := b.bs.Bind(br)
+	_ = autherr
+	if lerr, ok := autherr.(d.LdapError); ok {
+		logger.Print("caught ldaperror in simple")
+		res = NewBindResponse(
+			msg.MessageId,
+			lerr.ResultCode,
+			lerr.MatchedDN,
+			lerr.DiagnosticMessage,
+		)
+		return
+	} else if autherr != nil {
+		logger.Print("caught regular error in simple")
+		err = autherr
+		return
 	}
 
-	logger.Printf("%t", resp)
+	logger.Print("auth success")
 
-	return ctx, nil
+	// TODO this is probably horribly unthreadsafe
+	boundEntryVal := ctx.Value(BoundEntryKey)
+	be, ok := boundEntryVal.(**d.Entry)
+	if !ok {
+		return fmt.Errorf("bound entry did not exist or was not an entry pointer pointer")
+	}
+	*be = entry
+
+	res = NewBindResponse(
+		msg.MessageId,
+		d.Success,
+		br.Name,
+		"bind request successfult (no password checking yet)",
+	)
+
+	return
 }
 
 var UnbindError = errors.New("unbind request recieved")
 
-func HandleUnbindRequest(ctx context.Context, w io.Writer, s *Scheduler, msg LdapMsg) (context.Context, error) {
-	return ctx, UnbindError
-}
+var UnbindHandler = HandleFunc(UnbindRequestTag, UnbindRequestTag, func(ctx context.Context, w io.Writer, msg LdapMsg) error {
+	return UnbindError
+})

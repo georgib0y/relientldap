@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 )
@@ -188,12 +187,14 @@ func attrValFromStr(schema *Schema, s string) (*Attribute, string, error) {
 	spl := strings.Split(s, "=")
 	// TODO could be wrong
 	if len(spl) != 2 {
-		return nil, "", fmt.Errorf("malformed ava: %s", s)
+		// TODO should technically be providing a matched dn here but to hard
+		return nil, "", NewLdapError(InvalidDnSyntax, "", "malformed ava: %s", s)
 	}
 
 	attr, ok := schema.FindAttribute(strings.TrimSpace(spl[0]))
 	if !ok {
-		return nil, "", fmt.Errorf("unknown attribute %q", strings.TrimSpace(spl[0]))
+		// return nil, "", fmt.Errorf("unknown attribute %q", strings.TrimSpace(spl[0]))
+		return nil, "", NewLdapError(UndefinedAttributeType, "", "unknown attribute %q", strings.TrimSpace(spl[0]))
 	}
 
 	return attr, spl[1], nil

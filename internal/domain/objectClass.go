@@ -7,13 +7,33 @@ import (
 	"github.com/georgib0y/relientldap/internal/util"
 )
 
+var TopObjectClass = NewObjectClassBuilder().
+	SetOid("2.5.6.0").
+	AddName("top").
+	SetKind(Abstract).
+	AddMustAttr(ObjectClassAttribute).
+	Build()
+
 type ObjectClassKind int
 
 const (
 	Abstract ObjectClassKind = iota
 	Structural
-	Auxilary
+	Auxiliary
 )
+
+func NewKind(k string) (ObjectClassKind, error) {
+	switch k {
+	case "ABSTRACT":
+		return Abstract, nil
+	case "STRUCTURAL":
+		return Structural, nil
+	case "AUXILIARY":
+		return Auxiliary, nil
+	default:
+		return Abstract, fmt.Errorf("unknown kind %q", k)
+	}
+}
 
 func (k ObjectClassKind) String() string {
 	switch k {
@@ -21,8 +41,8 @@ func (k ObjectClassKind) String() string {
 		return "ABSTRACT"
 	case Structural:
 		return "STRUCTURAL"
-	case Auxilary:
-		return "AUXILARY"
+	case Auxiliary:
+		return "AUXILIARY"
 	}
 
 	return fmt.Sprintf("unknown (%d)", k)
@@ -72,8 +92,8 @@ func (b *ObjectClassBuilder) SetDesc(desc string) *ObjectClassBuilder {
 	return b
 }
 
-func (b *ObjectClassBuilder) SetObsolete() *ObjectClassBuilder {
-	b.o.obsolete = true
+func (b *ObjectClassBuilder) SetObsolete(o bool) *ObjectClassBuilder {
+	b.o.obsolete = o
 	return b
 }
 
@@ -106,7 +126,7 @@ func (b *ObjectClassBuilder) AddMustAttr(attr ...*Attribute) *ObjectClassBuilder
 
 func (b *ObjectClassBuilder) AddMayAttr(attr ...*Attribute) *ObjectClassBuilder {
 	for _, a := range attr {
-		b.o.mustAttrs[a.numericoid] = a
+		b.o.mayAttrs[a.numericoid] = a
 	}
 	return b
 }

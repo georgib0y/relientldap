@@ -18,10 +18,29 @@ func NewSchema(attrs map[OID]*Attribute, objClasses map[OID]*ObjectClass) *Schem
 	}
 }
 
+// TODO probably need name or oid
 func (s *Schema) FindAttribute(name string) (*Attribute, bool) {
+	if name == "objectClass" {
+		return ObjectClassAttribute, true
+	}
+
 	for _, a := range s.attributes {
 		if _, ok := a.names[name]; ok {
 			return a, true
+		}
+	}
+
+	return nil, false
+}
+
+func (s *Schema) FindObjectClass(name string) (*ObjectClass, bool) {
+	if name == "top" {
+		return TopObjectClass, true
+	}
+
+	for _, o := range s.objClasses {
+		if _, ok := o.names[name]; ok {
+			return o, true
 		}
 	}
 

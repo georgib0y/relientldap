@@ -323,6 +323,7 @@ func encodeTlv(w io.Writer, tag Tag, contents any) (int, error) {
 }
 
 func Encode(w io.Writer, v any) (int, error) {
+	logger.Printf("encoding %s", reflect.TypeOf(v))
 	tag, err := defaultTag(v)
 	if err != nil {
 		return 0, err

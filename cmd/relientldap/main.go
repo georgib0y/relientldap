@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/georgib0y/relientldap/internal/app"
 	d "github.com/georgib0y/relientldap/internal/domain"
 	"github.com/georgib0y/relientldap/internal/ldif"
 	"github.com/georgib0y/relientldap/internal/server"
@@ -29,8 +30,16 @@ func loadAttrs(path string) (map[d.OID]*d.Attribute, error) {
 	}
 	defer f.Close()
 
-	p := ldif.NewAttributeParser()
-	return ldif.ParseReader(f, p)
+	attrs, err := ldif.ParseAttributes(f)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, attr := range attrs {
+		logger.Print("\n", attr, "\n")
+	}
+
+	return attrs, nil
 }
 
 func loadObjClasses(path string, attrs map[d.OID]*d.Attribute) (map[d.OID]*d.ObjectClass, error) {
@@ -45,8 +54,7 @@ func loadObjClasses(path string, attrs map[d.OID]*d.Attribute) (map[d.OID]*d.Obj
 	}
 	defer f.Close()
 
-	p := ldif.NewObjectClassParser(attrs)
-	return ldif.ParseReader(f, p)
+	return ldif.ParseObjectClasses(f, attrs)
 }
 
 func main() {
@@ -75,14 +83,21 @@ func main() {
 
 	logger.Print("generated schema and test dit")
 
-	scheduler := server.NewScheduler(dit, schema)
+	scheduler := app.NewScheduler(dit, schema)
 	go scheduler.Run()
 
 	logger.Print("running scheduler in other goroutine")
 
-	mux := server.NewMux(scheduler)
-	mux.AddHandler(server.BindRequestTag, server.HandleBindRequest)
-	mux.AddHandler(server.UnbindRequestTag, server.HandleUnbindRequest)
+	mux := server.NewMux()
+
+	bindService := app.NewBindService(schema, scheduler)
+	bindHandler := server.NewBindHandler(bindService)
+	mux.AddHandler(bindHandler)
+	mux.AddHandler(server.UnbindHandler)
+
+	addService := app.NewAddService(schema, scheduler)
+	addHandler := server.NewAddHandler(addService)
+	mux.AddHandler(addHandler)
 
 	logger.Print("added handlers to mux")
 

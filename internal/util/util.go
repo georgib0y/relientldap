@@ -67,6 +67,7 @@ func NewHexLogger(l *log.Logger, prefix string) *HexLogger {
 
 func (h *HexLogger) Write(p []byte) (int, error) {
 	h.l.Printf("%s: %s", h.prefix, BytesAsHex(p))
+	h.l.Printf("%s (string): %q", h.prefix, string(p))
 	return len(p), nil
 }
 
