@@ -8,16 +8,30 @@ type Scheduler struct {
 	d     d.DIT
 	s     *d.Schema
 	queue chan Action
+	done  chan struct{}
 }
 
 func NewScheduler(d d.DIT, s *d.Schema) *Scheduler {
-	return &Scheduler{d: d, s: s, queue: make(chan Action)}
+	sch := &Scheduler{d: d, s: s, queue: make(chan Action), done: make(chan struct{})}
+	go sch.run()
+	return sch
 }
 
-func (s *Scheduler) Run() {
-	for a := range s.queue {
-		a(s.d)
+func (s *Scheduler) run() {
+	for {
+		select {
+		case <-s.done:
+			return
+		case a := <-s.queue:
+			a(s.d)
+		}
 	}
+}
+
+func (s *Scheduler) Close() {
+	s.done <- struct{}{}
+	close(s.queue)
+	close(s.done)
 }
 
 func (s *Scheduler) Schedule(action Action) {

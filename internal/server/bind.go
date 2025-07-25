@@ -75,10 +75,10 @@ func NewBindResponse(msgId int, rc d.ResultCode, matchedDn, format string, a ...
 }
 
 type BindHandler struct {
-	bs *app.BindService
+	bs app.BindService
 }
 
-func NewBindHandler(bs *app.BindService) *BindHandler {
+func NewBindHandler(bs app.BindService) *BindHandler {
 	return &BindHandler{bs}
 }
 
@@ -111,7 +111,7 @@ func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err
 		return
 	}
 
-	br, ok := req.(*BindRequest)
+	br, ok := req.(BindRequest)
 	if !ok {
 		res = NewBindResponse(
 			msg.MessageId,

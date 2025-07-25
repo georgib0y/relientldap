@@ -248,7 +248,7 @@ Test DIT Structue
 func GenerateTestDIT(schema *Schema) DIT {
 	attrs := map[string]*Attribute{}
 
-	attrNames := []string{"dc", "ou", "cn", "sn"}
+	attrNames := []string{"dc", "ou", "cn", "sn", "userPassword"}
 	for _, name := range attrNames {
 		a, ok := schema.FindAttribute(name)
 		if !ok {
@@ -282,6 +282,7 @@ func GenerateTestDIT(schema *Schema) DIT {
 		WithEntryAttr(attrs["cn"], "Test1"),
 		WithEntryAttr(attrs["sn"], "One"),
 		WithEntryAttr(attrs["sn"], "Tester"),
+		WithEntryAttr(attrs["userPassword"], "password123"),
 	))
 
 	cnTest2Dn := NewDnBuilder().

@@ -48,7 +48,7 @@ var matchingRules = map[string]MatchingRule{
 		numericoid: "2.5.13.0",
 		name:       "objectIdentifierMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.38",
-		match:      objectIdentifierMatch,
+		match:      basicStringEquality,
 	},
 	"bitStringMatch": MatchingRule{
 		numericoid: "2.5.13.16",
@@ -112,6 +112,7 @@ var matchingRules = map[string]MatchingRule{
 		numericoid: "2.5.13.17",
 		name:       "octetStringMatch",
 		syntax:     "1.3.6.1.4.1.1466.115.121.1.40",
+		match:      basicStringEquality,
 	},
 	"telephoneNumberMatch": MatchingRule{
 		numericoid: "2.5.13.20",
@@ -168,6 +169,10 @@ func unimplementedMatch(s1, s2 string) (bool, error) {
 	return false, UnimplementedMatchingRule
 }
 
+func basicStringEquality(s1, s2 string) (bool, error) {
+	return s1 == s2, nil
+}
+
 func bitStringMatch(s1, s2 string) (bool, error) {
 	return s1 == s2, nil
 }
@@ -175,11 +180,6 @@ func bitStringMatch(s1, s2 string) (bool, error) {
 // TODO insignificant space handling
 func caseIgnoreMatch(s1, s2 string) (bool, error) {
 	return strings.ToLower(s1) == strings.ToLower(s2), nil
-}
-
-func objectIdentifierMatch(s1, s2 string) (bool, error) {
-	// TODO this match also include implicit matching (some descr == oid)
-	return s1 == s2, nil
 }
 
 type substringAssertion struct {

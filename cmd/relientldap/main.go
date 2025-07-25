@@ -18,45 +18,6 @@ type Config struct {
 	objectClassLdifPath string
 }
 
-func loadAttrs(path string) (map[d.OID]*d.Attribute, error) {
-	stat, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := os.OpenFile(path, os.O_RDONLY, stat.Mode())
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	attrs, err := ldif.ParseAttributes(f)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, attr := range attrs {
-		logger.Print("\n", attr, "\n")
-	}
-
-	return attrs, nil
-}
-
-func loadObjClasses(path string, attrs map[d.OID]*d.Attribute) (map[d.OID]*d.ObjectClass, error) {
-	stat, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := os.OpenFile(path, os.O_RDONLY, stat.Mode())
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	return ldif.ParseObjectClasses(f, attrs)
-}
-
 func main() {
 	// TODO remove hardcoded config
 	config := Config{
@@ -64,21 +25,12 @@ func main() {
 		objectClassLdifPath: "ldif/objClasses.ldif",
 	}
 
-	attrs, err := loadAttrs(config.attributeLdifPath)
+	schema, err := ldif.LoadSchmeaFromPaths(config.attributeLdifPath, config.objectClassLdifPath)
 	if err != nil {
-		logger.Fatalf("could not load attributes: %s", err)
+		logger.Fatalf("could not load schema: %s", err)
 	}
 
-	logger.Print("loaded attrs")
-
-	objClasses, err := loadObjClasses(config.objectClassLdifPath, attrs)
-	if err != nil {
-		logger.Fatalf("could not load object classes: %s", err)
-	}
-
-	logger.Print("loaded object classes")
-
-	schema := d.NewSchema(attrs, objClasses)
+	// TODO load dit from persisted modelb
 	dit := d.GenerateTestDIT(schema)
 
 	logger.Print("generated schema and test dit")

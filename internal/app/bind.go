@@ -9,16 +9,6 @@ import (
 
 var bindLogger = log.New(os.Stderr, "bindService: ", log.Lshortfile)
 
-type BindService struct {
-	schema    *d.Schema
-	scheduler *Scheduler
-}
-
-func NewBindService(schema *d.Schema, scheduler *Scheduler) *BindService {
-	bindLogger.Print("creating new bind service")
-	return &BindService{schema, scheduler}
-}
-
 type BindRequest interface {
 	Dn() string
 	Version() int
@@ -27,12 +17,26 @@ type BindRequest interface {
 	SaslCredentials() (string, bool)
 }
 
-func (b *BindService) Bind(br BindRequest) (*d.Entry, error) {
+type BindService interface {
+	Bind(BindRequest) (*d.Entry, error)
+}
+
+type bindService struct {
+	schema    *d.Schema
+	scheduler *Scheduler
+}
+
+func NewBindService(schema *d.Schema, scheduler *Scheduler) BindService {
+	bindLogger.Print("creating new bind service")
+	return &bindService{schema, scheduler}
+}
+
+func (b *bindService) Bind(br BindRequest) (*d.Entry, error) {
 	if br.Version() != 3 {
 		return nil, d.NewLdapError(
 			d.ProtocolError,
 			"",
-			"expected bind request to be version 3, not %d", br.Version,
+			"expected bind request to be version 3, not %d", br.Version(),
 		)
 	}
 
@@ -43,7 +47,7 @@ func (b *BindService) Bind(br BindRequest) (*d.Entry, error) {
 	return nil, d.NewLdapError(d.AuthMethodNotSupported, "", "sasl or unknown method not supported")
 }
 
-func (b *BindService) authenticateSimple(entryDn string, simple string) (*d.Entry, error) {
+func (b *bindService) authenticateSimple(entryDn string, simple string) (*d.Entry, error) {
 	bindLogger.Print("in auth simple")
 
 	dn, err := d.NormaliseDN(b.schema, entryDn)
@@ -54,7 +58,27 @@ func (b *BindService) authenticateSimple(entryDn string, simple string) (*d.Entr
 
 	bindLogger.Printf("silly me logging your password in plain text: %s", simple)
 
-	return ScheduleAwait(b.scheduler, func(dit d.DIT) (*d.Entry, error) {
+	userPassword, ok := b.schema.FindAttribute("userPassword")
+	if !ok {
+		return nil, d.NewLdapError(d.UndefinedAttributeType, "", "userPassword is not defined in schema")
+	}
+
+	entry, err := ScheduleAwait(b.scheduler, func(dit d.DIT) (*d.Entry, error) {
 		return dit.GetEntry(dn)
 	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	ok, err = entry.ContainsAttrVal(userPassword, simple)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ok {
+		return nil, d.NewLdapError(d.InvalidCredentials, "", "invalid credentials")
+	}
+
+	return entry, nil
 }

@@ -205,7 +205,6 @@ func (a *LdifAttribute) Build(r *LdifAttrResolver) error {
 		if err != nil {
 			return err
 		}
-		logger.Printf("setting eq rule %q for %s", eq.Name(), a.names[0])
 		b.SetEqRule(eq)
 	}
 

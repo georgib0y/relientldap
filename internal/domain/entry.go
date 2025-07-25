@@ -58,6 +58,10 @@ func NewEntry(options ...EntryOption) *Entry {
 	return e
 }
 
+func (e *Entry) Dn() DN {
+	return e.dn
+}
+
 func (e *Entry) Clone() *Entry {
 	return &Entry{
 		dn:         e.dn.Clone(),
@@ -69,7 +73,7 @@ func (e *Entry) Clone() *Entry {
 // Assumes that the caller knows what their doing, and that they won't
 // violate any DIT rules e.g. singleval. Required by Modify Operation,
 // which allows for the entry to be temporarlily invalid
-func (e *Entry) AddAttr(attr *Attribute, val ...string) {
+func (e *Entry) AddAttrUnsafe(attr *Attribute, val ...string) {
 	for _, v := range val {
 		aVals, ok := e.attrs[attr]
 		if !ok {
@@ -81,9 +85,9 @@ func (e *Entry) AddAttr(attr *Attribute, val ...string) {
 	}
 }
 
-func (e *Entry) AddAttrSafe(attr *Attribute, val ...string) error {
+func (e *Entry) AddAttr(attr *Attribute, val ...string) error {
 	if !attr.SingleVal() {
-		e.AddAttr(attr, val...)
+		e.AddAttrUnsafe(attr, val...)
 		return nil
 	}
 
@@ -172,7 +176,7 @@ func (e *Entry) SetRDN(rdn RDN, deleteOld bool) error {
 			continue
 		}
 
-		if err = e.AddAttrSafe(a, v); err != nil {
+		if err = e.AddAttr(a, v); err != nil {
 			return err
 		}
 	}
