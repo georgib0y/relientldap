@@ -35,7 +35,7 @@ func (b *bindService) Bind(br BindRequest) (*d.Entry, error) {
 	if br.Version() != 3 {
 		return nil, d.NewLdapError(
 			d.ProtocolError,
-			"",
+			nil,
 			"expected bind request to be version 3, not %d", br.Version(),
 		)
 	}
@@ -44,7 +44,7 @@ func (b *bindService) Bind(br BindRequest) (*d.Entry, error) {
 		return b.authenticateSimple(br.Dn(), simple)
 	}
 
-	return nil, d.NewLdapError(d.AuthMethodNotSupported, "", "sasl or unknown method not supported")
+	return nil, d.NewLdapError(d.AuthMethodNotSupported, nil, "sasl or unknown method not supported")
 }
 
 func (b *bindService) authenticateSimple(entryDn string, simple string) (*d.Entry, error) {
@@ -60,7 +60,7 @@ func (b *bindService) authenticateSimple(entryDn string, simple string) (*d.Entr
 
 	userPassword, ok := b.schema.FindAttribute("userPassword")
 	if !ok {
-		return nil, d.NewLdapError(d.UndefinedAttributeType, "", "userPassword is not defined in schema")
+		return nil, d.NewLdapError(d.UndefinedAttributeType, nil, "userPassword is not defined in schema")
 	}
 
 	entry, err := ScheduleAwait(b.scheduler, func(dit d.DIT) (*d.Entry, error) {
@@ -77,7 +77,7 @@ func (b *bindService) authenticateSimple(entryDn string, simple string) (*d.Entr
 	}
 
 	if !ok {
-		return nil, d.NewLdapError(d.InvalidCredentials, "", "invalid credentials")
+		return nil, d.NewLdapError(d.InvalidCredentials, nil, "invalid credentials")
 	}
 
 	return entry, nil

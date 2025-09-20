@@ -1,8 +1,10 @@
-package model
+package domain
 
 import (
 	"fmt"
 	"io"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/georgib0y/relientldap/internal/util"
@@ -591,7 +593,7 @@ func (a *LdifAttribute) setNumericoid(t *Tokeniser) error {
 	if err != nil {
 		return err
 	}
-	a.numericoid = numericoival
+	a.numericoid = numericoid.val
 	return nil
 }
 

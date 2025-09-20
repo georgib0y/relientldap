@@ -1,4 +1,4 @@
-package model
+package domain
 
 import (
 	"errors"
@@ -158,7 +158,7 @@ func (d *DIT) getNode(dn DN) (*DITNode, error) {
 	var nfErr *NodeNotFoundError
 	if errors.As(err, &nfErr) {
 		nfErr.RequestedDN = dn
-		return nil, NewLdapError(NoSuchObject, nfErr.MatchedDN.String(), "no object found for requested dn %s", nfErr.RequestedDN)
+		return nil, NewLdapError(NoSuchObject, &nfErr.MatchedDN, "no object found for requested dn %s", nfErr.RequestedDN)
 	} else if err != nil {
 		return nil, err
 	}

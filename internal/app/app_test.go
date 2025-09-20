@@ -3,12 +3,13 @@ package app
 import (
 	"errors"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
 	d "github.com/georgib0y/relientldap/internal/domain"
-	"github.com/georgib0y/relientldap/internal/ldif"
+	"github.com/georgib0y/relientldap/internal/util"
 )
 
 var (
@@ -27,6 +28,26 @@ func projectRootDir() string {
 	log.Print(root)
 	return root
 }
+
+// opens attr ldif or panics
+func attrLdifFile() *os.File {
+	f, err := os.Open(attrLdif)
+	if err != nil {
+		log.Panicf("couldnt open attr ldif file: %s", attrLdif)
+	}
+	return f
+}
+
+// opens attr ldif or panics
+func ocsLdifFile() *os.File {
+	f, err := os.Open(ocsLdif)
+	if err != nil {
+		log.Panicf("couldnt open object class ldif file: %s", ocsLdif)
+	}
+	return f
+}
+
+var schema = util.Unwrap(d.LoadSchemaFromReaders(attrLdifFile(), ocsLdifFile()))
 
 type TestSimpleBindRequest struct {
 	dn, simple string
@@ -53,11 +74,6 @@ func (r TestSimpleBindRequest) SaslCredentials() (string, bool) {
 }
 
 func TestBindService(t *testing.T) {
-	schema, err := ldif.LoadSchemaFromPaths(attrLdif, ocsLdif)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	dit := d.GenerateTestDIT(schema)
 	scheduler := NewScheduler(dit, schema)
 	defer scheduler.Close()
@@ -77,7 +93,7 @@ func TestBindService(t *testing.T) {
 		{
 			req:     TestSimpleBindRequest{dn: "cn=Test1,dc=georgiboy,dc=dev", simple: "wrong password"},
 			entryDn: "cn=Test1,dc=georgiboy,dc=dev",
-			err:     d.NewLdapError(d.InvalidCredentials, "", ""),
+			err:     d.NewLdapError(d.InvalidCredentials, nil, ""),
 		},
 	}
 
@@ -128,11 +144,6 @@ func (a TestAddRequest) Attributes() map[string][]string {
 }
 
 func TestAddService(t *testing.T) {
-	schema, err := ldif.LoadSchemaFromPaths(attrLdif, ocsLdif)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	dit := d.GenerateTestDIT(schema)
 	scheduler := NewScheduler(dit, schema)
 	defer scheduler.Close()

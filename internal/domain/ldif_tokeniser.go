@@ -1,16 +1,12 @@
-package ldif
+package domain
 
 import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
-	"os"
 	"regexp"
 	"strings"
 )
-
-var logger = log.New(os.Stderr, "parser: ", log.Lshortfile)
 
 type TokenType int
 

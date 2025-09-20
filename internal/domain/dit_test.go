@@ -1,14 +1,17 @@
-package model
+package domain
 
 import (
 	"errors"
+	"os"
+
 	// "github.com/georgib0y/relientldap/internal/ldif"
 	"log"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/georgib0y/relientldap/internal/util"
 )
 
 var (
@@ -26,6 +29,24 @@ func projectRootDir() string {
 	root := filepath.Join(filepath.Dir(f), "../..")
 	log.Print(root)
 	return root
+}
+
+// opens attr ldif or panics
+func attrLdifFile() *os.File {
+	f, err := os.Open(attrLdif)
+	if err != nil {
+		log.Panicf("couldnt open attr ldif file: %s", attrLdif)
+	}
+	return f
+}
+
+// opens attr ldif or panics
+func ocsLdifFile() *os.File {
+	f, err := os.Open(ocsLdif)
+	if err != nil {
+		log.Panicf("couldnt open object class ldif file: %s", ocsLdif)
+	}
+	return f
 }
 
 // const attrLdif string = `
@@ -65,14 +86,21 @@ func projectRootDir() string {
 // 	"givenName":                NewAttributeBuilder().SetOid("givenName").Build(),
 // }
 
-// var schema = &Schema{attrs, nil}
+var schema = util.Unwrap(LoadSchemaFromReaders(attrLdifFile(), ocsLdifFile()))
+var attrs = map[string]*Attribute{
+	"dc":                       util.UnwrapOk(schema.FindAttribute("dc")),
+	"ou":                       util.UnwrapOk(schema.FindAttribute("ou")),
+	"cn":                       util.UnwrapOk(schema.FindAttribute("cn")),
+	"sn":                       util.UnwrapOk(schema.FindAttribute("sn")),
+	"facsimileTelephoneNumber": util.UnwrapOk(schema.FindAttribute("facsimileTelephoneNumber")),
+	"givenName":                util.UnwrapOk(schema.FindAttribute("givenName")),
+}
+
+var objClasses = map[string]*ObjectClass{
+	"person": util.UnwrapOk(schema.FindObjectClass("person")),
+}
 
 func TestGetEntryFindsByDn(t *testing.T) {
-	schema, err := ldif.LoadSchemaFromPaths(attrLdif, ocsLdif)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
@@ -93,17 +121,21 @@ func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 		t.Fatal("Expected error, got nil")
 	}
 
-	var nfErr *NodeNotFoundError
-	if !errors.As(err, &nfErr) {
-		t.Fatalf("Expected not found erro, got %s", err)
+	var ldapErr LdapError
+	if !errors.As(err, &ldapErr) {
+		t.Fatalf("Expected ldap err, got %s", err)
 	}
 
-	if !CompareDNs(dn, nfErr.RequestedDN) {
-		t.Errorf("DN (%s) and requested DN (%s) do not match", dn, nfErr.RequestedDN)
+	if ldapErr.ResultCode != NoSuchObject {
+		t.Fatalf("Expected NoSuchObject ldap err, got %s", ldapErr.ResultCode)
 	}
 
-	if !reflect.DeepEqual(expectedMatchedDn, nfErr.MatchedDN) {
-		t.Errorf("Expected matched DN (%s) and nfErr matchedDN (%s) do not match", expectedMatchedDn, nfErr.MatchedDN)
+	if ldapErr.MatchedDN == nil {
+		t.Fatal("Expected matched dn got nil")
+	}
+
+	if !CompareDNs(expectedMatchedDn, *ldapErr.MatchedDN) {
+		t.Errorf("Expected matched DN (%s) and nfErr matchedDN (%s) do not match", expectedMatchedDn, ldapErr.MatchedDN)
 	}
 }
 
@@ -112,8 +144,7 @@ func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "New Object").Build()
 
 	entry, err := NewEntry(schema, dn,
-		WithEntryAttr(attrs["cn"], "New Object"),
-		WithEntryAttr(attrs["givenName"], "New"),
+		WithStructural(objClasses["person"]),
 		WithEntryAttr(attrs["sn"], "Object"),
 	)
 	if err != nil {
@@ -134,7 +165,7 @@ func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 		attr *Attribute
 		val  string
 	}{
-		{attrs["givenName"], "New"},
+		// {attrs["givenName"], "New"},
 		{attrs["sn"], "Object"},
 		{attrs["cn"], "New Object"},
 	}
@@ -163,11 +194,13 @@ func TestDeleteEntryDeletesNode(t *testing.T) {
 
 	_, err := dit.GetEntry(dn)
 
-	var nfErr *NodeNotFoundError
-	if !errors.As(err, &nfErr) {
-		t.Fatal("Unexpected error getting deleted entry: ", err)
+	var ldapErr LdapError
+	if !errors.As(err, &ldapErr) {
+		if ldapErr.ResultCode != NoSuchObject {
+			t.Fatal("Expected ldap nosuchobject error getting deleted entry, got: ", err)
+		}
 	} else if err == nil {
-		t.Fatal("Expected not found error when getting deleted entry, got nil")
+		t.Fatal("Expected ldap nosuchobject error when getting deleted entry, got nil")
 	}
 }
 

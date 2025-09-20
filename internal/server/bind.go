@@ -125,7 +125,7 @@ func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err
 		res = NewResultMsg(BindResponseTag,
 			msg.MessageId,
 			lerr.ResultCode,
-			lerr.MatchedDN,
+			lerr.MatchedDN.String(),
 			"%s",
 			lerr.DiagnosticMessage,
 		)

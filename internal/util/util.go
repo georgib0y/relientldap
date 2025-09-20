@@ -106,3 +106,10 @@ func Unwrap[T any](t T, err error) T {
 	}
 	return t
 }
+
+func UnwrapOk[T any](t T, ok bool) T {
+	if !ok {
+		logger.Panic("failed to unwrap: not ok")
+	}
+	return t
+}

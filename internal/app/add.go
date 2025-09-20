@@ -22,7 +22,7 @@ func (a *AddService) objectClassOpt(reqAttrs map[string][]string) ([]d.EntryOpti
 	// TODO does oid need to be checked as well?
 	vals, ok := reqAttrs["objectClass"]
 	if !ok {
-		return nil, d.NewLdapError(d.ObjectClassViolation, "", "no object class was specified for entry")
+		return nil, d.NewLdapError(d.ObjectClassViolation, nil, "no object class was specified for entry")
 	}
 
 	opts := []d.EntryOption{}
@@ -30,7 +30,7 @@ func (a *AddService) objectClassOpt(reqAttrs map[string][]string) ([]d.EntryOpti
 	for _, v := range vals {
 		o, ok := a.schema.FindObjectClass(v)
 		if !ok {
-			return nil, d.NewLdapError(d.NoSuchAttribute, "", "could not find object class with name %s", v)
+			return nil, d.NewLdapError(d.NoSuchAttribute, nil, "could not find object class with name %s", v)
 		}
 
 		switch o.Kind() {
@@ -39,7 +39,7 @@ func (a *AddService) objectClassOpt(reqAttrs map[string][]string) ([]d.EntryOpti
 		case d.Auxiliary:
 			opts = append(opts, d.WithAuxiliary(o))
 		case d.Abstract:
-			return nil, d.NewLdapError(d.ObjectClassViolation, "", "trying to add an abstract object class %s directly", o.Name())
+			return nil, d.NewLdapError(d.ObjectClassViolation, nil, "trying to add an abstract object class %s directly", o.Name())
 		}
 	}
 
@@ -55,7 +55,7 @@ func (a *AddService) attributeOpts(reqAttrs map[string][]string) ([]d.EntryOptio
 		}
 		attr, ok := a.schema.FindAttribute(name)
 		if !ok {
-			return nil, d.NewLdapError(d.UndefinedAttributeType, "", "unknown attribute %s", name)
+			return nil, d.NewLdapError(d.UndefinedAttributeType, nil, "unknown attribute %s", name)
 		}
 
 		opts = append(opts, d.WithEntryAttr(attr, vals...))

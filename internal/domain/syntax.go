@@ -1,4 +1,4 @@
-package model
+package domain
 
 type Syntax struct {
 	numericoid OID
@@ -8,7 +8,7 @@ type Syntax struct {
 
 func (s Syntax) Validate(v string) error {
 	if s.validate == nil {
-		return NewLdapError(UnwillingToPerform, "", "Syntax %q is unimplemented", s.numericoid)
+		return NewLdapError(UnwillingToPerform, nil, "Syntax %q is unimplemented", s.numericoid)
 	}
 	return s.validate(v)
 }
@@ -163,7 +163,7 @@ var syntaxes = map[string]Syntax{
 func GetSyntax(oid OID) (Syntax, error) {
 	s, ok := syntaxes[string(oid)]
 	if !ok {
-		return Syntax{}, NewLdapError(InvalidAttributeSyntax, "", "Unknown syntax %q", oid)
+		return Syntax{}, NewLdapError(InvalidAttributeSyntax, nil, "Unknown syntax %q", oid)
 	}
 	return s, nil
 }
@@ -175,7 +175,7 @@ func validateBoolean(s string) error {
 	case "FALSE":
 		return nil
 	default:
-		return NewLdapError(InvalidAttributeSyntax, "", "unknown boolean %q", s)
+		return NewLdapError(InvalidAttributeSyntax, nil, "unknown boolean %q", s)
 	}
 }
 
@@ -187,7 +187,7 @@ func validateIA5String(s string) error {
 
 func validateDirectoryString(s string) error {
 	if len(s) == 0 {
-		return NewLdapError(InvalidAttributeSyntax, "", "directory strings cannot be empty")
+		return NewLdapError(InvalidAttributeSyntax, nil, "directory strings cannot be empty")
 	}
 
 	return nil

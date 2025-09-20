@@ -1,4 +1,4 @@
-package model
+package domain
 
 import (
 	"fmt"
@@ -33,7 +33,7 @@ func (m MatchingRule) Syntax() OID {
 
 func (m MatchingRule) Match(v1, v2 string) (bool, error) {
 	if m.match == nil {
-		return false, NewLdapError(UnwillingToPerform, "", "Matching rule %s has no implementation", m.name)
+		return false, NewLdapError(UnwillingToPerform, nil, "Matching rule %s has no implementation", m.name)
 	}
 	return m.match(v1, v2)
 }

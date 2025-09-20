@@ -1,4 +1,4 @@
-package model
+package domain
 
 import (
 	"errors"
@@ -111,19 +111,24 @@ func (e *Entry) ConatinsObjectClass(objClass *ObjectClass) bool {
 	return ok
 }
 
+// ContainsAttrVal will attempt to match based on the provided eq rule.
+// If the attribute does not have an eq rule, then val will be compared exactly.
 func (e *Entry) ContainsAttrVal(attr *Attribute, val string) (bool, error) {
 	a, ok := e.attrs[attr]
 	if !ok {
 		return false, nil
 	}
 
+	eq, hasEqRule := attr.EqRule()
+
 	matched := false
 	var undefined error
 	for v := range a {
-		eq, ok := attr.EqRule()
-		if !ok {
-			return false, NewLdapError(InappropriateMatching, "", "attr %s does not have an eq rule", attr.Oid())
+		if !hasEqRule && v == val {
+			matched = true
+			continue
 		}
+
 		m, err := eq.Match(val, v)
 		if err != nil {
 			if errors.Is(err, UndefinedMatch) {

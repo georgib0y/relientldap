@@ -1,4 +1,4 @@
-package model
+package domain
 
 import (
 	"fmt"
@@ -53,27 +53,27 @@ func (s *Schema) FindObjectClass(name string) (*ObjectClass, bool) {
 
 func (s *Schema) ValidateAttributeVals(attr *Attribute, vals map[string]struct{}) error {
 	if len(vals) == 0 {
-		return NewLdapError(ConstraintViolation, "", "Attribute %q exists for entry but has no given values", attr.Name())
+		return NewLdapError(ConstraintViolation, nil, "Attribute %q exists for entry but has no given values", attr.Name())
 	}
 	if len(vals) > 1 && attr.singleVal {
-		return NewLdapError(ConstraintViolation, "", "Attribute %q requires a single val but %d are given", attr.Name(), len(vals))
+		return NewLdapError(ConstraintViolation, nil, "Attribute %q requires a single val but %d are given", attr.Name(), len(vals))
 	}
 
 	if attr.noUserMod {
-		return NewLdapError(ConstraintViolation, "", "Attribute %q has the no user mod flag", attr.Name())
+		return NewLdapError(ConstraintViolation, nil, "Attribute %q has the no user mod flag", attr.Name())
 	}
 
 	for v := range vals {
 		syntax, sLen, ok := attr.Syntax()
 		if !ok {
-			return NewLdapError(InvalidAttributeSyntax, "", "Attribute %q or sups have no syntax", attr.Name())
+			return NewLdapError(InvalidAttributeSyntax, nil, "Attribute %q or sups have no syntax", attr.Name())
 		}
 		if err := syntax.Validate(v); err != nil {
 			return err
 		}
 
 		if sLen > 0 && len(v) > sLen {
-			return NewLdapError(ConstraintViolation, "", " value %q for attribute %q exceeds syntax len %d", v, attr.Name(), sLen)
+			return NewLdapError(ConstraintViolation, nil, " value %q for attribute %q exceeds syntax len %d", v, attr.Name(), sLen)
 		}
 	}
 
@@ -82,18 +82,18 @@ func (s *Schema) ValidateAttributeVals(attr *Attribute, vals map[string]struct{}
 
 func (s *Schema) ValidateEntry(e *Entry) error {
 	if e.structural == nil {
-		return NewLdapError(ConstraintViolation, "",
+		return NewLdapError(ConstraintViolation, nil,
 			"An entry must have a structural object class",
 		)
 	}
 	for oc := range e.auxiliary {
 		if oc.kind == Abstract {
-			return NewLdapError(ConstraintViolation, "",
+			return NewLdapError(ConstraintViolation, nil,
 				"An entry cannot belong directly to an abstract class",
 			)
 		}
 
-		return NewLdapError(ConstraintViolation, "",
+		return NewLdapError(ConstraintViolation, nil,
 			"An entry cannot have multiple structural object classes",
 		)
 	}
@@ -104,7 +104,7 @@ func (s *Schema) ValidateEntry(e *Entry) error {
 	for must := range AllObjectClassMusts(e) {
 		vals, ok := e.attrs[must]
 		if !ok {
-			return NewLdapError(ConstraintViolation, "",
+			return NewLdapError(ConstraintViolation, nil,
 				"Entry does not contain must attribute %q", must.Name(),
 			)
 		}
@@ -121,7 +121,7 @@ func (s *Schema) ValidateEntry(e *Entry) error {
 
 		_, ok := allMay[attr]
 		if !ok {
-			return NewLdapError(ConstraintViolation, "",
+			return NewLdapError(ConstraintViolation, nil,
 				"Entry does contains unspecified attribute %q", attr.Name(),
 			)
 		}
@@ -138,7 +138,7 @@ func (s *Schema) ValidateEntry(e *Entry) error {
 			return err
 		}
 		if !ok {
-			return NewLdapError(Other, "", "internal error: entry does not contain all the attributes in it's DN")
+			return NewLdapError(Other, nil, "internal error: entry does not contain all the attributes in it's DN")
 		}
 	}
 	return nil

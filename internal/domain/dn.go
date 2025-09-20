@@ -1,4 +1,4 @@
-package model
+package domain
 
 import (
 	"slices"
@@ -172,7 +172,10 @@ func (dn DN) GetParentDN() DN {
 	return DN{dn.rdns[:len(dn.rdns)-1]}
 }
 
-func (d DN) String() string {
+func (d *DN) String() string {
+	if d == nil {
+		return ""
+	}
 	rdns := []string{}
 	for i := range d.rdns {
 		rdns = append(rdns, d.rdns[len(d.rdns)-i-1].String())
@@ -186,13 +189,13 @@ func attrValFromStr(schema *Schema, s string) (*Attribute, string, error) {
 	// TODO could be wrong
 	if len(spl) != 2 {
 		// TODO should technically be providing a matched dn here but to hard
-		return nil, "", NewLdapError(InvalidDnSyntax, "", "malformed ava: %s", s)
+		return nil, "", NewLdapError(InvalidDnSyntax, nil, "malformed ava: %s", s)
 	}
 
 	attr, ok := schema.FindAttribute(strings.TrimSpace(spl[0]))
 	if !ok {
 		// return nil, "", fmt.Errorf("unknown attribute %q", strings.TrimSpace(spl[0]))
-		return nil, "", NewLdapError(UndefinedAttributeType, "", "unknown attribute %q", strings.TrimSpace(spl[0]))
+		return nil, "", NewLdapError(UndefinedAttributeType, nil, "unknown attribute %q", strings.TrimSpace(spl[0]))
 	}
 
 	return attr, spl[1], nil

@@ -1,45 +1,44 @@
-package ldif
+package domain
 
 import (
 	"strings"
 	"testing"
 
-	// d "github.com/georgib0y/relientldap/internal/domain"
 	"github.com/georgib0y/relientldap/internal/util"
 )
 
-var attributes = map[d.OID]*d.Attribute{
-	"cn":               d.NewAttributeBuilder().SetOid("cn").Build(),
-	"c":                d.NewAttributeBuilder().SetOid("c").Build(),
-	"seeAlso":          d.NewAttributeBuilder().SetOid("seeAlso").Build(),
-	"ou":               d.NewAttributeBuilder().SetOid("ou").Build(),
-	"l":                d.NewAttributeBuilder().SetOid("l").Build(),
-	"description":      d.NewAttributeBuilder().SetOid("description").Build(),
-	"searchGuide":      d.NewAttributeBuilder().SetOid("searchGuide").Build(),
-	"dc":               d.NewAttributeBuilder().SetOid("dc").Build(),
-	"serialNumber":     d.NewAttributeBuilder().SetOid("serialNumber").Build(),
-	"owner":            d.NewAttributeBuilder().SetOid("owner").Build(),
-	"o":                d.NewAttributeBuilder().SetOid("o").Build(),
-	"businessCategory": d.NewAttributeBuilder().SetOid("businessCategory").Build(),
-	"member":           d.NewAttributeBuilder().SetOid("member").Build(),
+var attributes = map[OID]*Attribute{
+	"cn":               NewAttributeBuilder().SetOid("cn").Build(),
+	"c":                NewAttributeBuilder().SetOid("c").Build(),
+	"seeAlso":          NewAttributeBuilder().SetOid("seeAlso").Build(),
+	"ou":               NewAttributeBuilder().SetOid("ou").Build(),
+	"l":                NewAttributeBuilder().SetOid("l").Build(),
+	"description":      NewAttributeBuilder().SetOid("description").Build(),
+	"searchGuide":      NewAttributeBuilder().SetOid("searchGuide").Build(),
+	"dc":               NewAttributeBuilder().SetOid("dc").Build(),
+	"serialNumber":     NewAttributeBuilder().SetOid("serialNumber").Build(),
+	"owner":            NewAttributeBuilder().SetOid("owner").Build(),
+	"o":                NewAttributeBuilder().SetOid("o").Build(),
+	"businessCategory": NewAttributeBuilder().SetOid("businessCategory").Build(),
+	"member":           NewAttributeBuilder().SetOid("member").Build(),
 }
 
-func getAttrs(oid ...string) []*d.Attribute {
-	attrs := []*d.Attribute{}
+func getAttrs(oid ...string) []*Attribute {
+	attrs := []*Attribute{}
 	for _, o := range oid {
-		attrs = append(attrs, attributes[d.OID(o)])
+		attrs = append(attrs, attributes[OID(o)])
 	}
 	return attrs
 }
 
-var objectClasses = map[d.OID]*d.ObjectClass{
-	"top": d.NewObjectClassBuilder().SetOid("2.5.6.0").Build(),
+var objectClasses = map[OID]*ObjectClass{
+	"top": NewObjectClassBuilder().SetOid("2.5.6.0").Build(),
 }
 
-func getObjClass(oid ...string) []*d.ObjectClass {
-	ocs := []*d.ObjectClass{}
+func getObjClass(oid ...string) []*ObjectClass {
+	ocs := []*ObjectClass{}
 	for _, o := range oid {
-		ocs = append(ocs, objectClasses[d.OID(o)])
+		ocs = append(ocs, objectClasses[OID(o)])
 	}
 	return ocs
 }
@@ -112,41 +111,41 @@ const manyAttrDefs = `
 `
 
 func TestParsesAttributes(t *testing.T) {
-	nameAttr := d.NewAttributeBuilder().
+	nameAttr := NewAttributeBuilder().
 		SetOid("2.5.4.41").
 		AddNames("name").
-		SetEqRule(util.Unwrap(d.GetMatchingRule("caseIgnoreMatch"))).
-		SetSubStrRule(util.Unwrap(d.GetMatchingRule("caseIgnoreSubstringsMatch"))).
-		SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.15"))), 0).
+		SetEqRule(util.Unwrap(GetMatchingRule("caseIgnoreMatch"))).
+		SetSubStrRule(util.Unwrap(GetMatchingRule("caseIgnoreSubstringsMatch"))).
+		SetSyntax(util.Unwrap(GetSyntax(OID("1.3.6.1.4.1.1466.115.121.1.15"))), 0).
 		Build()
 
-	exp := []*d.Attribute{
+	exp := []*Attribute{
 		nameAttr,
-		d.NewAttributeBuilder().
+		NewAttributeBuilder().
 			SetOid("2.5.4.3").
 			AddNames("cn").
 			SetSup(nameAttr).
 			Build(),
-		d.NewAttributeBuilder().
+		NewAttributeBuilder().
 			SetOid("2.5.4.6").
 			AddNames("c").
 			SetSup(nameAttr).
-			SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.11"))), 0).
+			SetSyntax(util.Unwrap(GetSyntax(OID("1.3.6.1.4.1.1466.115.121.1.11"))), 0).
 			SetSingleVal(true).
 			Build(),
-		d.NewAttributeBuilder().
+		NewAttributeBuilder().
 			SetOid("2.5.4.15").
 			AddNames("businessCategory").
-			SetEqRule(util.Unwrap(d.GetMatchingRule("caseIgnoreMatch"))).
-			SetSubStrRule(util.Unwrap(d.GetMatchingRule("caseIgnoreSubstringsMatch"))).
-			SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.15"))), 0).
+			SetEqRule(util.Unwrap(GetMatchingRule("caseIgnoreMatch"))).
+			SetSubStrRule(util.Unwrap(GetMatchingRule("caseIgnoreSubstringsMatch"))).
+			SetSyntax(util.Unwrap(GetSyntax(OID("1.3.6.1.4.1.1466.115.121.1.15"))), 0).
 			Build(),
-		d.NewAttributeBuilder().
+		NewAttributeBuilder().
 			SetOid("0.9.2342.19200300.100.1.25").
 			AddNames("dc").
-			SetEqRule(util.Unwrap(d.GetMatchingRule("caseIgnoreIA5Match"))).
-			SetSubStrRule(util.Unwrap(d.GetMatchingRule("caseIgnoreIA5SubstringsMatch"))).
-			SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.26"))), 0).
+			SetEqRule(util.Unwrap(GetMatchingRule("caseIgnoreIA5Match"))).
+			SetSubStrRule(util.Unwrap(GetMatchingRule("caseIgnoreIA5SubstringsMatch"))).
+			SetSyntax(util.Unwrap(GetSyntax(OID("1.3.6.1.4.1.1466.115.121.1.26"))), 0).
 			SetSingleVal(true).
 			Build(),
 	}
@@ -169,7 +168,7 @@ func TestParsesAttributes(t *testing.T) {
 			t.Fatalf("attr is nil for %s", e.Oid())
 		}
 
-		if err = d.AttributesAreEqual(attr, e); err != nil {
+		if err = AttributesAreEqual(attr, e); err != nil {
 			t.Fatalf("Parsed attr did not match exp for ldif:\n%s\nGot: %s\nExp: %s\nReason: %s",
 				manyAttrDefs,
 				attr.String(),
@@ -233,11 +232,11 @@ const manyOcDefs = `
 func TestParsesObjectClass(t *testing.T) {
 	tests := []struct {
 		ldif string
-		exp  []*d.ObjectClass
+		exp  []*ObjectClass
 	}{
 		{
 			ldif: `( 2.5.6.0.1 NAME 'top2' DESC 'this is some desc' )`,
-			exp: []*d.ObjectClass{d.NewObjectClassBuilder().
+			exp: []*ObjectClass{NewObjectClassBuilder().
 				SetOid("2.5.6.0.1").
 				AddName("top2").
 				SetDesc("this is some desc").
@@ -247,62 +246,62 @@ func TestParsesObjectClass(t *testing.T) {
 		{
 			ldif: `( 2.5.6.0.1 NAME 'top1' DESC 'somethign' )
 ( 2.5.6.0.2 NAME 'top2')`,
-			exp: []*d.ObjectClass{
-				d.NewObjectClassBuilder().SetOid("2.5.6.0.1").AddName("top1").SetDesc("somethign").Build(),
-				d.NewObjectClassBuilder().SetOid("2.5.6.0.2").AddName("top2").Build(),
+			exp: []*ObjectClass{
+				NewObjectClassBuilder().SetOid("2.5.6.0.1").AddName("top1").SetDesc("somethign").Build(),
+				NewObjectClassBuilder().SetOid("2.5.6.0.2").AddName("top2").Build(),
 			},
 		},
 		{
 			ldif: `( 2.5.6.6 NAME ( 'person' 'ps' ) )`,
-			exp: []*d.ObjectClass{
-				d.NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
+			exp: []*ObjectClass{
+				NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
 			},
 		},
 		{
 			ldif: `( 2.5.6.6 NAME ( 'person' 'ps' ) )`,
-			exp: []*d.ObjectClass{
-				d.NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
+			exp: []*ObjectClass{
+				NewObjectClassBuilder().SetOid("2.5.6.6").AddName("person", "ps").Build(),
 			},
 		},
 		{
 			ldif: manyOcDefs,
-			exp: []*d.ObjectClass{
-				d.NewObjectClassBuilder().
+			exp: []*ObjectClass{
+				NewObjectClassBuilder().
 					SetOid("2.5.6.11").
 					AddName("applicationProcess").
 					AddSup(getObjClass("top")...).
-					SetKind(d.Structural).
+					SetKind(Structural).
 					AddMustAttr(getAttrs("cn")...).
 					AddMayAttr(getAttrs("seeAlso", "ou", "l", "description")...).
 					Build(),
-				d.NewObjectClassBuilder().
+				NewObjectClassBuilder().
 					SetOid("2.5.6.2").
 					AddName("country").
 					AddSup(getObjClass("top")...).
-					SetKind(d.Structural).
+					SetKind(Structural).
 					AddMustAttr(getAttrs("c")...).
 					AddMayAttr(getAttrs("searchGuide", "description")...).
 					Build(),
-				d.NewObjectClassBuilder().
+				NewObjectClassBuilder().
 					SetOid("1.3.6.1.4.1.1466.344").
 					AddName("dcObject").
 					AddSup(getObjClass("top")...).
-					SetKind(d.Auxiliary).
+					SetKind(Auxiliary).
 					AddMustAttr(getAttrs("dc")...).
 					Build(),
-				d.NewObjectClassBuilder().
+				NewObjectClassBuilder().
 					SetOid("2.5.6.14").
 					AddName("device").
 					AddSup(getObjClass("top")...).
-					SetKind(d.Structural).
+					SetKind(Structural).
 					AddMustAttr(getAttrs("cn")...).
 					AddMayAttr(getAttrs("serialNumber", "seeAlso", "owner", "ou", "o", "l", "description")...).
 					Build(),
-				d.NewObjectClassBuilder().
+				NewObjectClassBuilder().
 					SetOid("2.5.6.9").
 					AddName("groupOfNames").
 					AddSup(getObjClass("top")...).
-					SetKind(d.Structural).
+					SetKind(Structural).
 					AddMustAttr(getAttrs("member", "cn")...).
 					AddMayAttr(getAttrs("businessCategory", "seeAlso", "owner", "ou", "o", "description")...).
 					Build(),
@@ -330,7 +329,7 @@ func TestParsesObjectClass(t *testing.T) {
 				t.Fatalf("Parsed object classes does not contain %s", e.Oid())
 			}
 
-			if err = d.ObjectClassesAreEqual(objClass, e); err != nil {
+			if err = ObjectClassesAreEqual(objClass, e); err != nil {
 				t.Fatalf(
 					`Parsed object class did not match expected for ldif:
 %s

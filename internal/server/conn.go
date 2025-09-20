@@ -94,7 +94,13 @@ func tryWriteErr(h Handler, w io.Writer, msgId int, err error) error {
 		return err
 	}
 
-	res := NewResultMsg(h.ResponseTag(), msgId, lerr.ResultCode, lerr.MatchedDN, "%s", lerr.DiagnosticMessage)
+	res := NewResultMsg(
+		h.ResponseTag(),
+		msgId,
+		lerr.ResultCode,
+		lerr.MatchedDN.String(),
+		"%s", lerr.DiagnosticMessage,
+	)
 	return writeResponse(w, res)
 }
 

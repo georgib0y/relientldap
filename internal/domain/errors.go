@@ -1,4 +1,4 @@
-package model
+package domain
 
 import (
 	"errors"
@@ -66,11 +66,11 @@ func (rc ResultCode) String() string {
 
 type LdapError struct {
 	ResultCode        ResultCode
-	MatchedDN         string
+	MatchedDN         *DN
 	DiagnosticMessage string
 }
 
-func NewLdapError(c ResultCode, matched string, format string, a ...any) LdapError {
+func NewLdapError(c ResultCode, matched *DN, format string, a ...any) LdapError {
 	return LdapError{
 		ResultCode:        c,
 		MatchedDN:         matched,
