@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 )
@@ -145,22 +144,12 @@ func GetMatchingRule(nameOrOid string) (MatchingRule, error) {
 	return MatchingRule{}, fmt.Errorf("unknown matching rule %q", nameOrOid)
 }
 
-// For usage in tests where the name or oid is known, panics if the
-// name/oid is not known to be good, use GetMatchingRule elsewhere
-func GetMatchingRuleUnchecked(nameOrOid string) MatchingRule {
-	mr, err := GetMatchingRule(nameOrOid)
-	if err != nil {
-		log.Panicf("unknown matching rule name/oid: %s, %s", nameOrOid, err)
-	}
-	return mr
-}
-
 func (m MatchingRule) String() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Numericoid: %q\n", m.numericoid)
 	fmt.Fprintf(&sb, "Name: %q\n", m.name)
 	fmt.Fprintf(&sb, "Syntax: %q\n", m.syntax)
-	fmt.Fprintf(&sb, "Func name: %p\n", reflect.TypeOf(m.match).Name())
+	fmt.Fprintf(&sb, "Func name: %s\n", reflect.TypeOf(m.match).Name())
 	return sb.String()
 }
 

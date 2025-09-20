@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	d "github.com/georgib0y/relientldap/internal/domain"
+	// d "github.com/georgib0y/relientldap/internal/domain"
+	"github.com/georgib0y/relientldap/internal/util"
 )
 
 var attributes = map[d.OID]*d.Attribute{
@@ -114,9 +115,9 @@ func TestParsesAttributes(t *testing.T) {
 	nameAttr := d.NewAttributeBuilder().
 		SetOid("2.5.4.41").
 		AddNames("name").
-		SetEqRule(d.GetMatchingRuleUnchecked("caseIgnoreMatch")).
-		SetSubStrRule(d.GetMatchingRuleUnchecked("caseIgnoreSubstringsMatch")).
-		SetSyntax("1.3.6.1.4.1.1466.115.121.1.15", 0).
+		SetEqRule(util.Unwrap(d.GetMatchingRule("caseIgnoreMatch"))).
+		SetSubStrRule(util.Unwrap(d.GetMatchingRule("caseIgnoreSubstringsMatch"))).
+		SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.15"))), 0).
 		Build()
 
 	exp := []*d.Attribute{
@@ -130,22 +131,22 @@ func TestParsesAttributes(t *testing.T) {
 			SetOid("2.5.4.6").
 			AddNames("c").
 			SetSup(nameAttr).
-			SetSyntax("1.3.6.1.4.1.1466.115.121.1.11", 0).
+			SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.11"))), 0).
 			SetSingleVal(true).
 			Build(),
 		d.NewAttributeBuilder().
 			SetOid("2.5.4.15").
 			AddNames("businessCategory").
-			SetEqRule(d.GetMatchingRuleUnchecked("caseIgnoreMatch")).
-			SetSubStrRule(d.GetMatchingRuleUnchecked("caseIgnoreSubstringsMatch")).
-			SetSyntax("1.3.6.1.4.1.1466.115.121.1.15", 0).
+			SetEqRule(util.Unwrap(d.GetMatchingRule("caseIgnoreMatch"))).
+			SetSubStrRule(util.Unwrap(d.GetMatchingRule("caseIgnoreSubstringsMatch"))).
+			SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.15"))), 0).
 			Build(),
 		d.NewAttributeBuilder().
 			SetOid("0.9.2342.19200300.100.1.25").
 			AddNames("dc").
-			SetEqRule(d.GetMatchingRuleUnchecked("caseIgnoreIA5Match")).
-			SetSubStrRule(d.GetMatchingRuleUnchecked("caseIgnoreIA5SubstringsMatch")).
-			SetSyntax("1.3.6.1.4.1.1466.115.121.1.26", 0).
+			SetEqRule(util.Unwrap(d.GetMatchingRule("caseIgnoreIA5Match"))).
+			SetSubStrRule(util.Unwrap(d.GetMatchingRule("caseIgnoreIA5SubstringsMatch"))).
+			SetSyntax(util.Unwrap(d.GetSyntax(d.OID("1.3.6.1.4.1.1466.115.121.1.26"))), 0).
 			SetSingleVal(true).
 			Build(),
 	}

@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/georgib0y/relientldap/internal/util"
 )
 
 var logger = log.New(os.Stderr, "model: ", log.Lshortfile)
@@ -172,7 +174,6 @@ func getNodeRecursive(rdns []RDN, node *DITNode) (*DITNode, error) {
 	}
 
 	if !matches {
-		logger.Printf("rdn %s did not match entry: %s", rdns[0], node.entry)
 		return nil, &NodeNotFoundError{}
 	}
 
@@ -252,58 +253,78 @@ func GenerateTestDIT(schema *Schema) DIT {
 	for _, name := range attrNames {
 		a, ok := schema.FindAttribute(name)
 		if !ok {
-			logger.Panicf("could not find name %q in schema", name)
+			logger.Panicf("could not find attribute %q in schema", name)
 		}
 		attrs[name] = a
+	}
+
+	objClasses := map[string]*ObjectClass{}
+
+	ocNames := []string{"dcObject", "person", "organizationalUnit"}
+	for _, name := range ocNames {
+		o, ok := schema.FindObjectClass(name)
+		if !ok {
+			logger.Panicf("could not find object class %q in schema", name)
+		}
+		objClasses[name] = o
 	}
 
 	dcDevDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev").
 		Build()
-	dcDev := NewDITNode(nil, NewEntry(WithDN(dcDevDn), WithEntryAttr(attrs["dc"], "dev")))
+	dcDev := NewDITNode(nil, util.Unwrap(NewEntry(schema,
+		dcDevDn,
+		WithStructural(objClasses["dcObject"]), // FAIL namingcontexts
+		WithEntryAttr(attrs["dc"], "dev"),
+	)))
 
 	dcGeorgiboyDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
 		Build()
-	dcGeorgiboy := NewDITNode(dcDev, NewEntry(WithDN(dcGeorgiboyDn), WithEntryAttr(attrs["dc"], "georgiboy")))
+	dcGeorgiboy := NewDITNode(dcDev, util.Unwrap(NewEntry(schema, dcGeorgiboyDn,
+		WithStructural(objClasses["dcObject"]),
+		WithEntryAttr(attrs["dc"], "georgiboy"),
+	)))
 
 	ouTestOuDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
 		AddAvaAsRdn(attrs["ou"], "TestOu").
 		Build()
-	ouTestOu := NewDITNode(dcGeorgiboy, NewEntry(WithDN(ouTestOuDn), WithEntryAttr(attrs["ou"], "TestOu")))
+	ouTestOu := NewDITNode(dcGeorgiboy, util.Unwrap(NewEntry(schema, ouTestOuDn,
+		WithStructural(objClasses["organizationalUnit"]),
+		WithEntryAttr(attrs["ou"], "TestOu"))))
 
 	cnTest1Dn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
 		AddAvaAsRdn(attrs["cn"], "Test1").
 		Build()
-	cnTest1 := NewDITNode(dcGeorgiboy, NewEntry(
-		WithDN(cnTest1Dn),
+	cnTest1 := NewDITNode(dcGeorgiboy, util.Unwrap(NewEntry(schema, cnTest1Dn,
+		WithStructural(objClasses["person"]),
 		WithEntryAttr(attrs["cn"], "Test1"),
 		WithEntryAttr(attrs["sn"], "One"),
 		WithEntryAttr(attrs["sn"], "Tester"),
 		WithEntryAttr(attrs["userPassword"], "password123"),
-	))
+	)))
 
 	cnTest2Dn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
 		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test2").
 		Build()
-	cnTest2 := NewDITNode(ouTestOu, NewEntry(
-		WithDN(cnTest2Dn),
+	cnTest2 := NewDITNode(ouTestOu, util.Unwrap(NewEntry(schema, cnTest2Dn,
+		WithStructural(objClasses["person"]),
 		WithEntryAttr(attrs["cn"], "Test2"),
 		WithEntryAttr(attrs["sn"], "Tester"),
-	))
+	)))
 
 	cnTest3Dn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
 		AddAvaAsRdn(attrs["ou"], "TestOu").AddAvaAsRdn(attrs["cn"], "Test3").
 		Build()
-	cnTest3 := NewDITNode(ouTestOu, NewEntry(
-		WithDN(cnTest3Dn),
+	cnTest3 := NewDITNode(ouTestOu, util.Unwrap(NewEntry(schema, cnTest3Dn,
+		WithStructural(objClasses["person"]),
 		WithEntryAttr(attrs["cn"], "Test3"),
 		WithEntryAttr(attrs["sn"], "Tester"),
-	))
+	)))
 
 	// add each child entry to their parent node
 	ouTestOu.AddChildNode(cnTest2)

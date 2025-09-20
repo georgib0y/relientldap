@@ -53,7 +53,7 @@ func (r TestSimpleBindRequest) SaslCredentials() (string, bool) {
 }
 
 func TestBindService(t *testing.T) {
-	schema, err := ldif.LoadSchmeaFromPaths(attrLdif, ocsLdif)
+	schema, err := ldif.LoadSchemaFromPaths(attrLdif, ocsLdif)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,11 @@ func TestBindService(t *testing.T) {
 			entryDn: "cn=Test1,dc=georgiboy,dc=dev",
 			err:     nil,
 		},
+		{
+			req:     TestSimpleBindRequest{dn: "cn=Test1,dc=georgiboy,dc=dev", simple: "wrong password"},
+			entryDn: "cn=Test1,dc=georgiboy,dc=dev",
+			err:     d.NewLdapError(d.InvalidCredentials, "", ""),
+		},
 	}
 
 	for _, test := range tests {
@@ -83,12 +88,14 @@ func TestBindService(t *testing.T) {
 				t.Fatalf("Bind service returned unexpected error: %s", err)
 			}
 
-			if errors.Is(err, test.err) {
-				t.Fatalf("Bind service returned got error: %q but expected error %q", err, test.err)
+			if !errors.Is(err, test.err) {
+				t.Fatalf("Bind service returned error: %q but expected: %q", err, test.err)
 			}
+
+			continue
 		}
 
-		if res == nil && test.entryDn != "" {
+		if res == nil {
 			t.Fatalf("Bind service returned nil entry but expected %q", test.entryDn)
 		}
 
@@ -121,7 +128,7 @@ func (a TestAddRequest) Attributes() map[string][]string {
 }
 
 func TestAddService(t *testing.T) {
-	schema, err := ldif.LoadSchmeaFromPaths(attrLdif, ocsLdif)
+	schema, err := ldif.LoadSchemaFromPaths(attrLdif, ocsLdif)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,17 +140,88 @@ func TestAddService(t *testing.T) {
 	as := NewAddService(schema, scheduler)
 
 	tests := []struct {
-		req     AddRequest
-		addedDn string
-		err     error
+		req AddRequest
+		err error
 	}{
 		{
 			req: TestAddRequest{
-				dn: "cn=NewEntry,dc=georgiboy,dc=dev",
+				dn: "cn=New Entry,dc=georgiboy,dc=dev",
 				attrs: map[string][]string{
-					
+					"objectClass": []string{"person"},
+					"cn":          []string{"New Entry"},
+					"sn":          []string{"Entry"},
 				},
 			},
+			err: nil,
+		},
+	}
+
+	for _, test := range tests {
+		res, err := as.AddEntry(test.req)
+		if err != nil {
+			if test.err == nil {
+				t.Fatalf("Add service returned unexpected err: %s", err)
+			}
+
+			if !errors.Is(err, test.err) {
+				t.Fatalf("Add service returned error: %q but expected: %q", err, test.err)
+			}
+
+			continue
 		}
+
+		if res == nil {
+			t.Fatalf("Add service returned nil entry, expected %q", test.req.Dn())
+		}
+
+		// check that res was put in the expected place
+		normDn, err := d.NormaliseDN(schema, test.req.Dn())
+		if err != nil {
+			t.Fatal(err)
+		}
+		newEntry, err := dit.GetEntry(normDn)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if res != newEntry {
+			t.Fatalf("expected res (%p) and newEntry (%p) to be the same pointer", res, newEntry)
+		}
+
+		//  test the entry has the expected object classes
+		ocs, ok := test.req.Attributes()["objectClass"]
+		if !ok {
+			t.Fatal("no objectclasses present in the add request")
+		}
+		for _, name := range ocs {
+			oc, ok := schema.FindObjectClass(name)
+			if !ok {
+				t.Fatalf("unknown object class %q", name)
+			}
+			if !res.ConatinsObjectClass(oc) {
+				t.Fatalf("entry is missing object class %q", name)
+			}
+		}
+		// test the entry has the expected attrs
+		for name, vals := range test.req.Attributes() {
+			if name == "objectClass" {
+				continue
+			}
+			attr, ok := schema.FindAttribute(name)
+			if !ok {
+				t.Fatalf("unknown attribute %q", name)
+			}
+			for _, v := range vals {
+				ok, err := res.ContainsAttrVal(attr, v)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !ok {
+					t.Fatalf("added entry does not contain value %q", v)
+				}
+			}
+
+		}
+
 	}
 }

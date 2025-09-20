@@ -19,11 +19,14 @@ const (
 	NoSuchAttribute                   = 16
 	UndefinedAttributeType            = 17
 	InappropriateMatching             = 18
+	ConstraintViolation               = 19
+	InvalidAttributeSyntax            = 21
 	NoSuchObject                      = 32
 	InvalidDnSyntax                   = 34
 	InvalidCredentials                = 49
 	UnwillingToPerform                = 53
 	ObjectClassViolation              = 65
+	Other                             = 80
 )
 
 func (rc ResultCode) String() string {
@@ -40,6 +43,10 @@ func (rc ResultCode) String() string {
 		return "UndefinedAttributeType"
 	case InappropriateMatching:
 		return "InappropriateMatching"
+	case ConstraintViolation:
+		return "ConstraintViolation"
+	case InvalidAttributeSyntax:
+		return "InvalidAttributeSyntax"
 	case NoSuchObject:
 		return "NoSuchObject"
 	case InvalidDnSyntax:
@@ -50,8 +57,10 @@ func (rc ResultCode) String() string {
 		return "UnwillingToPerform"
 	case ObjectClassViolation:
 		return "ObjectClassViolation"
+	case Other:
+		return "Other"
 	default:
-		return "unknown result code"
+		return fmt.Sprintf("unknown result code (%d)", rc)
 	}
 }
 
@@ -70,7 +79,7 @@ func NewLdapError(c ResultCode, matched string, format string, a ...any) LdapErr
 }
 
 func (e LdapError) Error() string {
-	return fmt.Sprintf("LdapError code: %s (%d), matched: %s, msg: %s", e.ResultCode, e.ResultCode, e.MatchedDN, e.DiagnosticMessage)
+	return fmt.Sprintf("LdapError code: %s (%d), matched: %q, msg: %s", e.ResultCode, e.ResultCode, e.MatchedDN, e.DiagnosticMessage)
 }
 
 // TODO should matching be more specific?

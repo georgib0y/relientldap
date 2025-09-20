@@ -1,6 +1,10 @@
 package model
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/georgib0y/relientldap/internal/util"
+)
 
 type matchingRuleTest struct {
 	v1, v2 string
@@ -26,6 +30,7 @@ func TestBitStringMatch(t *testing.T) {
 		{v1: "'00000'B", v2: "'00000'B", exp: true, expErr: nil},
 		{v1: "'11111'B", v2: "'00000'B", exp: false, expErr: nil},
 	}
+	bitString := util.Unwrap(GetMatchingRule("bitStringMatch"))
 	testMatchingRules(tests, bitString, t)
 }
 
@@ -35,5 +40,6 @@ func TestCaseIgnoreMatch(t *testing.T) {
 		{v1: "ABCD", v2: "abcd", exp: true, expErr: nil},
 		{v1: "ABCdsgjklfds", v2: "abcd", exp: false, expErr: nil},
 	}
+	caseIgnore := util.Unwrap(GetMatchingRule("caseIgnoreMatch"))
 	testMatchingRules(tests, caseIgnore, t)
 }

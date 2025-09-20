@@ -74,7 +74,7 @@ func writeResponse(w io.Writer, res LdapMsg) error {
 	}
 
 	var buf bytes.Buffer
-	logger.Print("encoding %v...", res)
+	logger.Printf("encoding %v...", res)
 	_, err := ber.Encode(&buf, res)
 	if err != nil {
 		return err
@@ -84,7 +84,7 @@ func writeResponse(w io.Writer, res LdapMsg) error {
 	if err != nil {
 		return err
 	}
-	logger.Printf("encoded %t", res)
+	logger.Printf("encoded %v", res)
 	return nil
 }
 
@@ -94,7 +94,7 @@ func tryWriteErr(h Handler, w io.Writer, msgId int, err error) error {
 		return err
 	}
 
-	res := NewResultMsg(h.ResponseTag(), msgId, lerr.ResultCode, lerr.MatchedDN, lerr.DiagnosticMessage)
+	res := NewResultMsg(h.ResponseTag(), msgId, lerr.ResultCode, lerr.MatchedDN, "%s", lerr.DiagnosticMessage)
 	return writeResponse(w, res)
 }
 

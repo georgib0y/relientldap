@@ -25,7 +25,7 @@ func main() {
 		objectClassLdifPath: "ldif/objClasses.ldif",
 	}
 
-	schema, err := ldif.LoadSchmeaFromPaths(config.attributeLdifPath, config.objectClassLdifPath)
+	schema, err := ldif.LoadSchemaFromPaths(config.attributeLdifPath, config.objectClassLdifPath)
 	if err != nil {
 		logger.Fatalf("could not load schema: %s", err)
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	// "path/filepath"
+	// "runtime"
 	"strings"
 )
 
@@ -96,4 +98,11 @@ func ContainsSubslice[T comparable](haystack []T, needle []T) bool {
 	}
 
 	return false
+}
+
+func Unwrap[T any](t T, err error) T {
+	if err != nil {
+		logger.Panic(err)
+	}
+	return t
 }

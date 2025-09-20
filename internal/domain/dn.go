@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-type AttrList map[OID]map[string]bool
-
 type (
 	ID uint64
 )
@@ -79,7 +77,7 @@ func CompareRDNs(r1, r2 *RDN) bool {
 func (r RDN) String() string {
 	avas := []string{}
 	for attr, val := range r.avas {
-		ava := string(attr.Oid()) + "=" + val
+		ava := attr.Name() + "=" + val
 		avas = append(avas, ava)
 	}
 
@@ -108,7 +106,7 @@ func NewDnBuilder() *DnBuilder {
 // TODO does the of context strings make sense?
 func (b *DnBuilder) AddNamingContext(dcAttr *Attribute, context ...string) *DnBuilder {
 	for _, dc := range context {
-		b.dn.rdns = append(b.dn.rdns, NewRDN(WithAVA(dcAttr, dc)))
+		b.AddAvaAsRdn(dcAttr, dc)
 	}
 	return b
 }

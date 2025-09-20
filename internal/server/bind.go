@@ -69,11 +69,6 @@ func (br BindRequest) SaslCredentials() (string, bool) {
 	return "", false
 }
 
-// TODO server sasl creds
-func NewBindResponse(msgId int, rc d.ResultCode, matchedDn, format string, a ...any) LdapMsg {
-	return NewResultMsg(BindResponseTag, msgId, rc, matchedDn, format, a...)
-}
-
 type BindHandler struct {
 	bs app.BindService
 }
@@ -102,7 +97,7 @@ func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err
 
 	_, req, ok := msg.Request.Chosen()
 	if !ok {
-		res = NewBindResponse(
+		res = NewResultMsg(BindResponseTag,
 			msg.MessageId,
 			d.ProtocolError,
 			"",
@@ -113,7 +108,7 @@ func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err
 
 	br, ok := req.(BindRequest)
 	if !ok {
-		res = NewBindResponse(
+		res = NewResultMsg(BindResponseTag,
 			msg.MessageId,
 			d.ProtocolError,
 			"",
@@ -127,10 +122,11 @@ func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err
 	_ = autherr
 	if lerr, ok := autherr.(d.LdapError); ok {
 		logger.Print("caught ldaperror in simple")
-		res = NewBindResponse(
+		res = NewResultMsg(BindResponseTag,
 			msg.MessageId,
 			lerr.ResultCode,
 			lerr.MatchedDN,
+			"%s",
 			lerr.DiagnosticMessage,
 		)
 		return
@@ -150,7 +146,7 @@ func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err
 	}
 	*be = entry
 
-	res = NewBindResponse(
+	res = NewResultMsg(BindResponseTag,
 		msg.MessageId,
 		d.Success,
 		br.Name,

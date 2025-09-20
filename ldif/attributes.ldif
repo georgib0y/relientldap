@@ -9,7 +9,6 @@
          SINGLE-VALUE )
 
       ( 2.5.4.3 NAME 'cn'
-      
          SUP name )
 
       ( 0.9.2342.19200300.100.1.25 NAME 'dc'

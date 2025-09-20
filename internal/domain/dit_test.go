@@ -2,52 +2,78 @@ package model
 
 import (
 	"errors"
+	// "github.com/georgib0y/relientldap/internal/ldif"
+	"log"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-const attrLdif string = `
-      ( 0.9.2342.19200300.100.1.25 NAME 'dc'
-         EQUALITY caseIgnoreIA5Match
-         SUBSTR caseIgnoreIA5SubstringsMatch
-         SYNTAX 1.3.6.1.4.1.1466.115.121.1.26
-         SINGLE-VALUE )
+var (
+	rootDir  = projectRootDir()
+	attrLdif = filepath.Join(rootDir, "ldif/attributes.ldif")
+	ocsLdif  = filepath.Join(rootDir, "ldif/objClasses.ldif")
+)
 
-      ( 2.5.4.41 NAME 'name'
-         EQUALITY caseIgnoreMatch
-         SUBSTR caseIgnoreSubstringsMatch
-         SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+func projectRootDir() string {
+	_, f, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Panic("runtime.Caller(0) not ok")
+	}
 
-      ( 2.5.4.11 NAME 'ou'
-         SUP name )
-
-      ( 2.5.4.3 NAME 'cn'
-         SUP name )
-
-      ( 2.5.4.4 NAME 'sn'
-         SUP name )
-
-	  ( 2.5.4.23 NAME 'facsimileTelephoneNumber'
-         SYNTAX 1.3.6.1.4.1.1466.115.121.1.22 )
-
-      ( 2.5.4.42 NAME 'givenName'
-         SUP name )
-`
-
-var attrs = map[OID]*Attribute{
-	"dc":                       NewAttributeBuilder().SetOid("dc").AddNames("dc").Build(),
-	"ou":                       NewAttributeBuilder().SetOid("ou").AddNames("ou").Build(),
-	"cn":                       NewAttributeBuilder().SetOid("cn").AddNames("cn").Build(),
-	"sn":                       NewAttributeBuilder().SetOid("sn").AddNames("sn").Build(),
-	"facsimileTelephoneNumber": NewAttributeBuilder().SetOid("facsimileTelephoneNumber").Build(),
-	"givenName":                NewAttributeBuilder().SetOid("givenName").Build(),
+	root := filepath.Join(filepath.Dir(f), "../..")
+	log.Print(root)
+	return root
 }
 
-var schema = Schema{attrs, nil}
+// const attrLdif string = `
+//       ( 0.9.2342.19200300.100.1.25 NAME 'dc'
+//          EQUALITY caseIgnoreIA5Match
+//          SUBSTR caseIgnoreIA5SubstringsMatch
+//          SYNTAX 1.3.6.1.4.1.1466.115.121.1.26
+//          SINGLE-VALUE )
+
+//       ( 2.5.4.41 NAME 'name'
+//          EQUALITY caseIgnoreMatch
+//          SUBSTR caseIgnoreSubstringsMatch
+//          SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+//       ( 2.5.4.11 NAME 'ou'
+//          SUP name )
+
+//       ( 2.5.4.3 NAME 'cn'
+//          SUP name )
+
+//       ( 2.5.4.4 NAME 'sn'
+//          SUP name )
+
+// 	  ( 2.5.4.23 NAME 'facsimileTelephoneNumber'
+//          SYNTAX 1.3.6.1.4.1.1466.115.121.1.22 )
+
+//       ( 2.5.4.42 NAME 'givenName'
+//          SUP name )
+// `
+
+// var attrs = map[OID]*Attribute{
+// 	"dc":                       NewAttributeBuilder().SetOid("dc").AddNames("dc").Build(),
+// 	"ou":                       NewAttributeBuilder().SetOid("ou").AddNames("ou").Build(),
+// 	"cn":                       NewAttributeBuilder().SetOid("cn").AddNames("cn").Build(),
+// 	"sn":                       NewAttributeBuilder().SetOid("sn").AddNames("sn").Build(),
+// 	"facsimileTelephoneNumber": NewAttributeBuilder().SetOid("facsimileTelephoneNumber").Build(),
+// 	"givenName":                NewAttributeBuilder().SetOid("givenName").Build(),
+// }
+
+// var schema = &Schema{attrs, nil}
 
 func TestGetEntryFindsByDn(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	schema, err := ldif.LoadSchemaFromPaths(attrLdif, ocsLdif)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if _, err := dit.GetEntry(dn); err != nil {
@@ -56,7 +82,7 @@ func TestGetEntryFindsByDn(t *testing.T) {
 }
 
 func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Nonexistent").Build()
 
 	expectedMatchedDn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").Build()
@@ -82,16 +108,19 @@ func TestGetEntryFailsReturnsMatchedDn(t *testing.T) {
 }
 
 func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "New Object").Build()
 
-	entry := NewEntry(
+	entry, err := NewEntry(schema, dn,
 		WithEntryAttr(attrs["cn"], "New Object"),
 		WithEntryAttr(attrs["givenName"], "New"),
 		WithEntryAttr(attrs["sn"], "Object"),
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	err := dit.InsertEntry(dn, entry)
+	err = dit.InsertEntry(dn, entry)
 	if err != nil {
 		t.Fatalf("Error inserting new entry: %s", err)
 	}
@@ -125,7 +154,7 @@ func TestInsertEntryPutsEntryInTreeWithRdnAtt(t *testing.T) {
 }
 
 func TestDeleteEntryDeletesNode(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.DeleteEntry(dn); err != nil {
@@ -143,7 +172,7 @@ func TestDeleteEntryDeletesNode(t *testing.T) {
 }
 
 func TestDeleteEntryFailsOnNonLeafNode(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["ou"], "TestOu").Build()
 
 	err := dit.DeleteEntry(dn)
@@ -154,7 +183,7 @@ func TestDeleteEntryFailsOnNonLeafNode(t *testing.T) {
 }
 
 func TestModifyAddEntryAddsAttributes(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.ModifyEntry(dn, AddOperation(attrs["facsimileTelephoneNumber"], "12345")); err != nil {
@@ -172,7 +201,7 @@ func TestModifyAddEntryAddsAttributes(t *testing.T) {
 }
 
 func TestModifyDeleteSingleEntryDeletesAttribute(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.ModifyEntry(dn, DeleteOperation(attrs["sn"], "One-Two")); err != nil {
@@ -199,7 +228,7 @@ func TestModifyDeleteSingleEntryDeletesAttribute(t *testing.T) {
 }
 
 func TestModifyDeleteAllEntryDeletesAttributes(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.ModifyEntry(dn, DeleteOperation(attrs["sn"])); err != nil {
@@ -226,7 +255,7 @@ func TestModifyDeleteAllEntryDeletesAttributes(t *testing.T) {
 }
 
 func TestModifyReplaceReplacesAttributes(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 	dn := NewDnBuilder().AddNamingContext(attrs["dc"], "dev", "georgiboy").AddAvaAsRdn(attrs["cn"], "Test1").Build()
 
 	if err := dit.ModifyEntry(dn, ReplaceOperation(attrs["sn"], "Three", "Three-Four")); err != nil {
@@ -286,7 +315,7 @@ into:
 ------| cn=Test2
 */
 func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 
 	dn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
@@ -332,7 +361,7 @@ func TestModifyDNChangesRDNDeletesOldRDNAndMovesEntry(t *testing.T) {
 }
 
 func TestSearchBaseObject(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 
 	baseDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
@@ -372,7 +401,7 @@ func TestSearchBaseObject(t *testing.T) {
 }
 
 func TestSearchSingleLevel(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 
 	baseDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
@@ -389,7 +418,11 @@ func TestSearchSingleLevel(t *testing.T) {
 		t.Fatalf("expected 1 result, got %d", len(res))
 	}
 
-	if !res[0].MatchesRdn(NewRDN(WithAVA(attrs["cn"], "Test2"))) {
+	ok, err := res[0].MatchesRdn(NewRDN(WithAVA(attrs["cn"], "Test2")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
 		t.Log(res[0])
 		t.Fatal("expected {cn:Test2} to be rdn for result")
 	}
@@ -406,7 +439,7 @@ func TestSearchSingleLevel(t *testing.T) {
 }
 
 func TestSearchWholeSubtree(t *testing.T) {
-	dit := GenerateTestDIT(&schema)
+	dit := GenerateTestDIT(schema)
 
 	baseDn := NewDnBuilder().
 		AddNamingContext(attrs["dc"], "dev", "georgiboy").
@@ -422,7 +455,11 @@ func TestSearchWholeSubtree(t *testing.T) {
 		t.Fatalf("expected 1 result, got %d", len(res))
 	}
 
-	if !res[0].MatchesRdn(NewRDN(WithAVA(attrs["cn"], "Test2"))) {
+	ok, err := res[0].MatchesRdn(NewRDN(WithAVA(attrs["cn"], "Test2")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
 		t.Log(res[0])
 		t.Fatal("expected {cn:Test2} to be rdn for only result")
 	}

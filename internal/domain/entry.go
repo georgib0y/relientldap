@@ -9,31 +9,26 @@ import (
 	"github.com/georgib0y/relientldap/internal/util"
 )
 
-type (
-	ObjClassMap map[*ObjectClass]struct{}
-	AttrMap     map[*Attribute]map[string]struct{}
-)
-
 type Entry struct {
 	dn         DN
-	objClasses ObjClassMap
-	attrs      AttrMap
+	structural *ObjectClass
+	auxiliary  map[*ObjectClass]struct{}
+	attrs      map[*Attribute]map[string]struct{}
 }
-
-// TODO better validation when creating entrys - ie must have at least one object class
 
 type EntryOption func(*Entry)
 
-func WithDN(dn DN) EntryOption {
+func WithStructural(s *ObjectClass) EntryOption {
 	return func(e *Entry) {
-		e.dn = dn
+		e.structural = s
 	}
 }
 
-func WithObjClass(oc ...*ObjectClass) EntryOption {
+func WithAuxiliary(aux ...*ObjectClass) EntryOption {
+	// TODO check and shake dependencies
 	return func(e *Entry) {
-		for _, o := range oc {
-			e.objClasses[o] = struct{}{}
+		for _, oc := range aux {
+			e.auxiliary[oc] = struct{}{}
 		}
 	}
 }
@@ -44,18 +39,27 @@ func WithEntryAttr(attr *Attribute, val ...string) EntryOption {
 	}
 }
 
-// TODO do i require dn when entry is made?
-func NewEntry(options ...EntryOption) *Entry {
+func NewEntry(schema *Schema, dn DN, options ...EntryOption) (*Entry, error) {
 	e := &Entry{
-		objClasses: ObjClassMap{},
-		attrs:      AttrMap{},
+		dn:        dn,
+		auxiliary: map[*ObjectClass]struct{}{},
+		attrs:     map[*Attribute]map[string]struct{}{},
 	}
 
 	for _, o := range options {
 		o(e)
 	}
 
-	return e
+	// include DN attributes if not already
+	for attr, val := range dn.GetRDN().avas {
+		e.AddAttr(attr, val)
+	}
+
+	if err := schema.ValidateEntry(e); err != nil {
+		return nil, err
+	}
+
+	return e, nil
 }
 
 func (e *Entry) Dn() DN {
@@ -65,7 +69,8 @@ func (e *Entry) Dn() DN {
 func (e *Entry) Clone() *Entry {
 	return &Entry{
 		dn:         e.dn.Clone(),
-		objClasses: util.CloneMap(e.objClasses),
+		structural: e.structural,
+		auxiliary:  util.CloneMap(e.auxiliary),
 		attrs:      util.CloneMapNested(e.attrs),
 	}
 }
@@ -96,6 +101,14 @@ func (e *Entry) AddAttr(attr *Attribute, val ...string) error {
 	}
 	e.attrs[attr] = map[string]struct{}{val[0]: {}}
 	return nil
+}
+
+func (e *Entry) ConatinsObjectClass(objClass *ObjectClass) bool {
+	if e.structural == objClass {
+		return true
+	}
+	_, ok := e.auxiliary[objClass]
+	return ok
 }
 
 func (e *Entry) ContainsAttrVal(attr *Attribute, val string) (bool, error) {
@@ -253,15 +266,19 @@ func ReplaceOperation(attr *Attribute, vals ...string) ChangeOperation {
 	}
 }
 
-func (e Entry) String() string {
+func (e *Entry) String() string {
 	sb := strings.Builder{}
-
-	sb.WriteString("Entry: \n")
+	fmt.Fprintf(&sb, "Entry: \nStructural: %s\nAuxiliary: ", e.structural.Name())
+	for oc := range e.auxiliary {
+		fmt.Fprintf(&sb, " %s", oc.Name())
+	}
+	sb.WriteString("\nAttributes:\n")
 	for attr, vals := range e.attrs {
-		sb.WriteString(fmt.Sprintf("\tAttr: %s\n", attr.Oid()))
+		fmt.Fprintf(&sb, "\t%s:", attr.Name())
 		for val := range vals {
-			sb.WriteString(fmt.Sprintf("\t\t%s\n", val))
+			fmt.Fprintf(&sb, " %s", val)
 		}
+		sb.WriteRune('\n')
 	}
 
 	return sb.String()
