@@ -49,6 +49,7 @@ func NewDIT(root *DITNode) *DIT {
 	return &DIT{root}
 }
 
+// TODO is returning a to an entry dangers? (yes?)
 func (d *DIT) GetEntry(dn DN) (*Entry, error) {
 	logger.Printf("getting entry: %s", dn)
 	node, err := d.getNode(dn)
@@ -74,6 +75,8 @@ func (d *DIT) InsertEntry(dn DN, entry *Entry) error {
 
 	entry.dn = dn.Clone()
 	pNode.AddChild(entry)
+
+	logger.Printf("added entry: %s", entry)
 	return nil
 }
 
@@ -92,6 +95,7 @@ func (d *DIT) ModifyEntry(dn DN, ops ...ChangeOperation) error {
 	}
 
 	node.entry = entry
+	logger.Printf("modified entry: %s", node.entry)
 	return nil
 }
 
@@ -123,6 +127,8 @@ func (d *DIT) ModifyEntryDN(dn DN, rdn RDN, deleteOldRDN bool, newSuperiorDN *DN
 
 	currParent.DeleteChild(curr)
 	newParent.AddChild(entry)
+
+	logger.Printf("modified entry dn: %s", entry)
 
 	return nil
 }

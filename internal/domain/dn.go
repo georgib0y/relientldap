@@ -111,6 +111,11 @@ func (b *DnBuilder) AddNamingContext(dcAttr *Attribute, context ...string) *DnBu
 	return b
 }
 
+func (b *DnBuilder) AddRdn(rdn RDN) *DnBuilder {
+	b.dn.rdns = append(b.dn.rdns, rdn)
+	return b
+}
+
 func (b *DnBuilder) AddAvaAsRdn(attr *Attribute, val string) *DnBuilder {
 	b.dn.rdns = append(b.dn.rdns, NewRDN(WithAVA(attr, val)))
 	return b
@@ -202,25 +207,31 @@ func attrValFromStr(schema *Schema, s string) (*Attribute, string, error) {
 }
 
 // TODO this is definitely not a complete DN parser, though probs good enough for now
+func NormaliseRDN(schema *Schema, s string) (RDN, error) {
+	rdnOpts := []RDNOption{}
+	avas := strings.Split(s, "+")
+	for _, ava := range avas {
+		a, v, err := attrValFromStr(schema, ava)
+		if err != nil {
+			return RDN{}, err
+		}
+		rdnOpts = append(rdnOpts, WithAVA(a, v))
+	}
+
+	return NewRDN(rdnOpts...), nil
+}
+
 func NormaliseDN(schema *Schema, s string) (DN, error) {
 	b := NewDnBuilder()
 	rdns := strings.Split(s, ",")
 	slices.Reverse(rdns)
 
 	for _, spl := range rdns {
-		avas := strings.Split(spl, "+")
-		a, v, err := attrValFromStr(schema, avas[0])
+		rdn, err := NormaliseRDN(schema, spl)
 		if err != nil {
 			return DN{}, err
 		}
-		b.AddAvaAsRdn(a, v)
-		for _, ava := range avas[1:] {
-			a, v, err := attrValFromStr(schema, ava)
-			if err != nil {
-				return DN{}, err
-			}
-			b.AddAvaToCurrentRdn(a, v)
-		}
+		b.AddRdn(rdn)
 	}
 
 	return b.Build(), nil

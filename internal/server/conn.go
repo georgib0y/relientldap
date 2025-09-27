@@ -107,8 +107,8 @@ func tryWriteErr(h Handler, w io.Writer, msgId int, err error) error {
 func (m *Mux) Serve(c net.Conn) {
 	defer c.Close()
 
-	teeIn := io.TeeReader(c, util.NewHexLogger(logger, "in"))
-	teeOut := io.MultiWriter(util.NewHexLogger(logger, "out"), c)
+	r := io.TeeReader(c, util.NewHexLogger("in"))
+	w := io.MultiWriter(util.NewHexLogger("out"), c)
 
 	boundEntry := new(*d.Entry)
 	ctx := context.WithValue(context.Background(), BoundEntryKey, boundEntry)
@@ -116,7 +116,7 @@ func (m *Mux) Serve(c net.Conn) {
 	for {
 		logger.Print("recieving message...")
 		var msg LdapMsg
-		if err := ber.Decode(teeIn, &msg); err != nil {
+		if err := ber.Decode(r, &msg); err != nil {
 			logger.Print(err)
 			return
 		}
@@ -134,12 +134,12 @@ func (m *Mux) Serve(c net.Conn) {
 			return
 		}
 
-		err := h.Handle(ctx, teeOut, msg)
+		err := h.Handle(ctx, w, msg)
 		if errors.Is(err, UnbindError) {
 			logger.Print("recieved unbind request, closing connection")
 			return
 		} else if err != nil {
-			err = tryWriteErr(h, teeOut, msg.MessageId, err)
+			err = tryWriteErr(h, w, msg.MessageId, err)
 			if err != nil {
 				logger.Printf("unrecoverable err: %s", err)
 				return

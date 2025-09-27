@@ -7,7 +7,6 @@ import (
 
 	"github.com/georgib0y/relientldap/internal/app"
 	d "github.com/georgib0y/relientldap/internal/domain"
-	"github.com/georgib0y/relientldap/internal/ldif"
 	"github.com/georgib0y/relientldap/internal/server"
 )
 
@@ -18,6 +17,23 @@ type Config struct {
 	objectClassLdifPath string
 }
 
+func loadSchema(config Config) (*d.Schema, error) {
+	fattr, err := os.Open(config.attributeLdifPath)
+	if err != nil {
+		return nil, err
+	}
+	defer fattr.Close()
+
+	focs, err := os.Open(config.objectClassLdifPath)
+	if err != nil {
+		return nil, err
+	}
+	defer focs.Close()
+
+	return d.LoadSchemaFromReaders(fattr, focs)
+
+}
+
 func main() {
 	// TODO remove hardcoded config
 	config := Config{
@@ -25,7 +41,7 @@ func main() {
 		objectClassLdifPath: "ldif/objClasses.ldif",
 	}
 
-	schema, err := ldif.LoadSchemaFromPaths(config.attributeLdifPath, config.objectClassLdifPath)
+	schema, err := loadSchema(config)
 	if err != nil {
 		logger.Fatalf("could not load schema: %s", err)
 	}
@@ -36,20 +52,20 @@ func main() {
 	logger.Print("generated schema and test dit")
 
 	scheduler := app.NewScheduler(dit, schema)
-	go scheduler.Run()
-
 	logger.Print("running scheduler in other goroutine")
 
 	mux := server.NewMux()
 
 	bindService := app.NewBindService(schema, scheduler)
-	bindHandler := server.NewBindHandler(bindService)
-	mux.AddHandler(bindHandler)
+	mux.AddHandler(server.NewBindHandler(bindService))
 	mux.AddHandler(server.UnbindHandler)
 
 	addService := app.NewAddService(schema, scheduler)
-	addHandler := server.NewAddHandler(addService)
-	mux.AddHandler(addHandler)
+	mux.AddHandler(server.NewAddHandler(addService))
+
+	modifyService := app.NewModifyService(schema, scheduler)
+	mux.AddHandler(server.NewModifyHandler(modifyService))
+	mux.AddHandler(server.NewModifyDnHandler(modifyService))
 
 	logger.Print("added handlers to mux")
 

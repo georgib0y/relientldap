@@ -3,6 +3,7 @@ package ber
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"reflect"
@@ -13,7 +14,8 @@ import (
 var logger = log.New(os.Stderr, "ber: ", log.Lshortfile)
 
 func init() {
-	// logger.SetOutput(io.Discard)
+	_ = io.Discard
+	logger.SetOutput(io.Discard)
 }
 
 const (

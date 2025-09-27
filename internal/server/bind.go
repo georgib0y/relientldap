@@ -106,13 +106,13 @@ func (b *BindHandler) Handle(ctx context.Context, w io.Writer, msg LdapMsg) (err
 		return
 	}
 
-	br, ok := req.(BindRequest)
+	br, ok := req.(*BindRequest)
 	if !ok {
 		res = NewResultMsg(BindResponseTag,
 			msg.MessageId,
 			d.ProtocolError,
 			"",
-			"expected *BindRequest, got %s", reflect.TypeOf(req),
+			"expected %s, got %s", reflect.TypeFor[BindRequest](), reflect.TypeOf(req),
 		)
 		return
 	}

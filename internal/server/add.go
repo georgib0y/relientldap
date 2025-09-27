@@ -10,15 +10,10 @@ import (
 	"github.com/georgib0y/relientldap/pkg/ber"
 )
 
-// the real attribute deinition requies that vals is not empty
-type Attribute struct {
-	AType string
-	Vals  ber.Set[string]
-}
-
 type AddRequest struct {
 	Entry string
-	Attrs []Attribute
+	// the real attribute deinition requies that vals is not empty
+	Attrs []PartialAttribute
 }
 
 func (ar AddRequest) Dn() string {

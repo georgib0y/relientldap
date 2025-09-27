@@ -2,14 +2,18 @@ package util
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
-	// "path/filepath"
-	// "runtime"
 	"strings"
 )
 
 var logger = log.New(os.Stderr, "util: ", log.Lshortfile)
+
+func init() {
+	_ = io.Discard
+	logger.SetOutput(io.Discard)
+}
 
 func CloneMap[K comparable, V any](m map[K]V) map[K]V {
 	cloned := map[K]V{}
@@ -59,17 +63,16 @@ func BytesAsHex(b []byte) string {
 }
 
 type HexLogger struct {
-	l      *log.Logger
 	prefix string
 }
 
-func NewHexLogger(l *log.Logger, prefix string) *HexLogger {
-	return &HexLogger{l, prefix}
+func NewHexLogger(prefix string) *HexLogger {
+	return &HexLogger{prefix}
 }
 
 func (h *HexLogger) Write(p []byte) (int, error) {
-	h.l.Printf("%s: %s", h.prefix, BytesAsHex(p))
-	h.l.Printf("%s (string): %q", h.prefix, string(p))
+	logger.Printf("%s: %s (str: %q)", h.prefix, BytesAsHex(p), string(p))
+	// logger.Printf("%s (string): %q", h.prefix, string(p))
 	return len(p), nil
 }
 

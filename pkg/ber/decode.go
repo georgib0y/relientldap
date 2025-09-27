@@ -375,7 +375,8 @@ func decodeContents(r io.Reader, len int, contents any) (int, error) {
 		if err != nil {
 			return read, err
 		}
-		v.Elem().Set(reflect.ValueOf(i))
+		// v.Elem().Set(reflect.ValueOf(i))
+		v.Elem().SetInt(int64(i))
 
 	case reflect.String:
 		b, n, err := decodeOctetString(r, len)

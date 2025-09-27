@@ -3,7 +3,6 @@ package domain
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/georgib0y/relientldap/internal/util"
@@ -167,7 +166,7 @@ func (e *Entry) RemoveAttrVal(attr *Attribute, val string) error {
 }
 
 func (e *Entry) RemoveAttrVals(attr *Attribute) bool {
-	log.Print(e.attrs)
+	logger.Printf("removing attr val: %s", attr.Name())
 	if _, ok := e.attrs[attr]; !ok {
 		return false
 	}
@@ -259,7 +258,7 @@ func ReplaceOperation(attr *Attribute, vals ...string) ChangeOperation {
 	return func(e *Entry) error {
 		// do nothing if the attribue does not exist
 		if !e.RemoveAttrVals(attr) {
-			log.Printf("replace attr does not exist: \"%s\"", attr.Oid())
+			logger.Printf("replace attr does not exist: \"%s\"", attr.Oid())
 			return nil
 		}
 
